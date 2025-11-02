@@ -266,7 +266,7 @@ def sync(
                 console.print("[green]  • No stale rows to delete[/green]")
 
             console.print(
-                "\n[bold green]✓ Dry-run complete - no changes made to database[/bold green]"
+                "\n[bold green]OK Dry-run complete - no changes made to database[/bold green]"
             )
             console.print(f"[dim]  Source file: {file_path}[/dim]")
             if csv_file_to_sync != file_path:
@@ -278,7 +278,7 @@ def sync(
             console.print(f"[cyan]Syncing {csv_file_to_sync.name} using job '{job}'...[/cyan]")
             rows_synced = sync_csv_to_db(csv_file_to_sync, crump_job, db_url, filename_values)
 
-            console.print(f"[green]✓ Successfully synced {rows_synced} rows[/green]")
+            console.print(f"[green]OK Successfully synced {rows_synced} rows[/green]")
             console.print(f"[dim]  Table: {crump_job.target_table}[/dim]")
             console.print(f"[dim]  Source file: {file_path}[/dim]")
             if csv_file_to_sync != file_path:

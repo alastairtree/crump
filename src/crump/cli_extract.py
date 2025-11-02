@@ -296,7 +296,7 @@ def _extract_with_config(
             continue
 
     # Final summary
-    console.print("[bold green]✓ Extraction complete[/bold green]")
+    console.print("[bold green]OK Extraction complete[/bold green]")
     console.print(f"[dim]  Created {total_files_created} CSV file(s)[/dim]")
     console.print(f"[dim]  Total rows extracted: {total_rows:,}[/dim]")
     console.print(f"[dim]  Output directory: {output_dir.absolute()}[/dim]")
@@ -397,7 +397,7 @@ def _extract_raw(
                 continue
 
         # Final summary
-        console.print("[bold green]✓ Extraction complete[/bold green]")
+        console.print("[bold green]OK Extraction complete[/bold green]")
         console.print(f"[dim]  Created/updated {total_files_created} CSV file(s)[/dim]")
         console.print(f"[dim]  Total rows extracted: {total_rows:,}[/dim]")
         console.print(f"[dim]  Output directory: {output_dir.absolute()}[/dim]")
