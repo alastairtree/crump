@@ -21,7 +21,7 @@ There are many ways to contribute:
 
 ```bash
 # Fork on GitHub, then clone your fork
-git clone https://github.com/YOUR-USERNAME/AppName.git
+git clone https://github.com/alastairtree/crump.git
 cd AppName
 ```
 
@@ -302,7 +302,7 @@ Follow PEP 8 and project conventions:
 
 ```python
 # Good
-def sync_csv_to_postgres(
+def sync_csv_to_db(
     file_path: Path,
     crump_job: CrumpJob,
     db_url: str
@@ -387,7 +387,7 @@ Test with real database:
 def test_sync_creates_table(db_url):
     """Test that sync creates table if it doesn't exist."""
     # Sync CSV
-    sync_csv_to_postgres(...)
+    sync_csv_to_db(...)
 
     # Verify table exists
     with psycopg.connect(db_url) as conn:
@@ -428,7 +428,7 @@ class TestMyFeature:
 Always include examples:
 
 ```markdown
-## sync_csv_to_postgres
+## sync_csv_to_db
 
 Sync a CSV file to PostgreSQL.
 
@@ -436,12 +436,12 @@ Sync a CSV file to PostgreSQL.
 
 \`\`\`python
 from pathlib import Path
-from crump import sync_csv_to_postgres, CrumpConfig
+from crump import sync_csv_to_db, CrumpConfig
 
 config = CrumpConfig.from_yaml(Path("crump_config.yaml"))
 job = config.get_job("my_job")
 
-rows = sync_csv_to_postgres(
+rows = sync_csv_to_db(
     file_path=Path("data.csv"),
     crump_job=job,
     db_url="postgresql://localhost/mydb"
@@ -470,7 +470,7 @@ rows = sync_csv_to_postgres(
 
 ### Getting Help
 
-- **Documentation**: Check the [docs](https://yourusername.github.io/crump)
+- **Documentation**: Check the [docs](https://alastairtree.github.io/crump)
 - **Issues**: Search existing issues
 - **Discussions**: Use GitHub Discussions for questions
 

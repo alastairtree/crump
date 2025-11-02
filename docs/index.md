@@ -4,24 +4,35 @@ WARNING: This is a demo and all code is entirely untested. Use at your own risk!
 
 Examines and syncs CSV and CDF science files into PostgreSQL or SQLite databases in batched files using easy to edit configuration files.
 
-[![CI](https://github.com/yourusername/crump/workflows/CI/badge.svg)](https://github.com/yourusername/crump/actions)
+[![CI](https://github.com/alastairtree/crump/workflows/CI/badge.svg)](https://github.com/alastairtree/crump/actions)
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
 ## Overview
 
-**crump** is a command-line tool and Python library for easy syncing CSV and CDF files to a PostgreSQL database. It provides a declarative, configuration-based approach to data synchronization with some additional features that make it very fast to get up and running syncing big complex data files into a db quickly.
+**crump** is a command-line tool and Python library for easy syncing CSV and CDF files to PostgreSQL or SQLite databases. It provides a declarative, configuration-based approach to data synchronization with automatic schema management and built-in support for science data files.
 
 ## Key Features
 
+### Automatic Schema Management
+- **Automatic Table Creation**: Creates target tables if they don't exist
+- **Schema Evolution**: Automatically adds new columns as needed, never deletes existing columns
+- **Index Management**: Suggests and creates database indexes based on column types
+- **Type Detection**: Intelligently detects column types from your data
+
+### CDF Science File Support
+- **Native CDF Processing**: Built-in support for Common Data Format (CDF) science files
+- **Automatic Extraction**: Extracts CDF variables to CSV or directly to database
+- **Array Variable Handling**: Automatically expands multi-dimensional array variables
+- **Two Extraction Modes**: Raw dump or config-based with transformations
+
+### Data Synchronization
 - **Configuration-Based**: Examines your CSV files with the prepare command, and defines sync jobs in YAML with sensible column mappings
-- **Creates missing database schema**: Automatically creates target tables if they don't exist, and updates schema as needed. Never deletes columns.
-- **Column Mapping**: Sync all columns, rename them or only sync a subset
+- **Column Mapping**: Sync all columns, rename them, or only sync a subset
 - **Dual Interface**: Use as a CLI tool or import as a Python library
 - **Filename-Based Extraction**: Extract values from filenames (dates, versions, etc.) and store in database columns
-- **Automatic Cleanup**: Delete stale records based on extracted filename values after sync
+- **Automatic Cleanup**: Delete stale records based on extracted filename values
 - **Compound Primary Keys**: Support for multi-column primary keys
-- **Suggests and manages Database Indexes**: Prepare command suggests indexes based on column types and puts them in the config file, you then adjust and deploy to the database with the sync command. Define indexes with custom sort orders
 - **Dry-Run Mode**: Preview all changes without modifying the database
 - **Idempotent Operations**: Safe to run multiple times, uses upsert
 - **Rich Output**: Beautiful terminal output with Rich library
@@ -63,5 +74,5 @@ crump sync users_2025-01-01_v02.csv crump_config.yaml users_sync
 
 ## Support
 
-If you have any questions or run into issues, please [open an issue](https://github.com/yourusername/crump/issues) on GitHub.
+If you have any questions or run into issues, please [open an issue](https://github.com/alastairtree/crump/issues) on GitHub.
 

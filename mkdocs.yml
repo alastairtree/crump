@@ -1,10 +1,10 @@
 site_name: crump
 site_description: Sync CSV and CDF science files into PostgreSQL database
-site_author: Your Name
-site_url: https://yourusername.github.io/crump
+site_author: Alastair Tree
+site_url: https://alastairtree.github.io/crump/
 
-repo_name: yourusername/crump
-repo_url: https://github.com/yourusername/crump
+repo_name: alastairtree/crump
+repo_url: https://github.com/alastairtree/crump
 edit_uri: edit/main/docs/
 
 theme:
