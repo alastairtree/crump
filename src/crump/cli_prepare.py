@@ -266,7 +266,7 @@ def _display_prepare_results(
         column_mappings: List of column mappings (excluding ID)
         suggested_indexes: List of suggested indexes
     """
-    console.print("[green]✓ Job configuration created successfully![/green]")
+    console.print("[green]OK Job configuration created successfully![/green]")
     console.print(f"[dim]  Config file: {config}[/dim]")
     console.print(f"[dim]  Job name: {job.name}[/dim]")
     console.print(f"[dim]  Target table: {job.target_table}[/dim]")
@@ -411,7 +411,7 @@ def prepare(file_paths: tuple[Path, ...], config: Path, job: str | None, force: 
                 try:
                     extracted_csvs = _extract_cdf_to_temp_csv(cdf_file, temp_dir, max_records=50)
                     temp_csv_files.extend(extracted_csvs)
-                    console.print(f"[green]✓ CDF extraction complete: {cdf_file.name}[/green]\n")
+                    console.print(f"[green]OK CDF extraction complete: {cdf_file.name}[/green]\n")
                 except ValueError as e:
                     console.print(f"[red]Error extracting {cdf_file.name}:[/red] {e}\n")
                     if len(file_paths) == 1:
@@ -514,7 +514,7 @@ def prepare(file_paths: tuple[Path, ...], config: Path, job: str | None, force: 
         # Save config once after processing all files
         if jobs_created > 0 or jobs_updated > 0:
             crump_config.save_to_yaml(config)
-            console.print(f"\n[green]✓ Configuration saved to {config}[/green]")
+            console.print(f"\n[green]OK Configuration saved to {config}[/green]")
             if jobs_created > 0:
                 console.print(f"[dim]  Jobs created: {jobs_created}[/dim]")
             if jobs_updated > 0:
