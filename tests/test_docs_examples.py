@@ -113,17 +113,21 @@ def prepare_test_environment(tmp_path: Path) -> dict[str, Path]:
     sample_csv.write_text("user_id,name,email\n1,Alice,alice@example.com\n2,Bob,bob@example.com\n")
 
     data_csv = tmp_path / "data.csv"
-    data_csv.write_text("id,value,amount\n1,test,100\n2,demo,200\n")
+    data_csv.write_text("user_id,name,email\n1,Test User,test@example.com\n2,Demo User,demo@example.com\n")
 
-    # Create sample config
+    # Create activity_log.csv for docs examples
+    activity_log_csv = tmp_path / "activity_log.csv"
+    activity_log_csv.write_text("user_id,action,timestamp\n1,login,2024-01-01\n2,logout,2024-01-02\n")
+
+    # Create users_v2.csv for docs examples
+    users_v2_csv = tmp_path / "users_v2.csv"
+    users_v2_csv.write_text("user_id,name,email,notes\n1,Alice Updated,alice@example.com,Admin\n")
+
+    # Create sample config with only my_job (docs will create other jobs)
     config_yaml = tmp_path / "crump_config.yaml"
     config_yaml.write_text("""
 jobs:
   my_job:
-    target_table: users
-    id_mapping:
-      user_id: id
-  users_sync:
     target_table: users
     id_mapping:
       user_id: id
@@ -136,6 +140,8 @@ jobs:
         'users.csv': users_csv,
         'sample.csv': sample_csv,
         'data.csv': data_csv,
+        'activity_log.csv': activity_log_csv,
+        'users_v2.csv': users_v2_csv,
         'crump_config.yaml': config_yaml,
         'tmp_path': tmp_path
     }
@@ -237,19 +243,32 @@ class TestExecutableDocsCLI:
                 if not line.startswith('crump'):
                     continue
 
+                # Skip extract and inspect commands for CDF files (need binary CDF files)
+                if ('crump extract' in line or 'crump inspect' in line) and '.cdf' in line:
+                    continue
+
                 # Replace file references with our test files
                 cmd = line
                 for name, path in test_env.items():
                     if name in cmd:
                         cmd = cmd.replace(name, str(path))
 
-                # Skip commands with --db-url (need database)
-                if '--db-url' in cmd or 'DATABASE_URL' in cmd:
+                # Handle export DATABASE_URL commands (skip them)
+                if line.startswith('export DATABASE_URL='):
                     continue
 
-                # Skip sync commands (need database)
-                if 'crump sync' in cmd and '--dry-run' not in cmd:
+                # Skip commands with postgresql db-url (need real database)
+                if 'postgresql://' in cmd:
                     continue
+
+                # Skip sync commands without --db-url or DATABASE_URL (need database)
+                if 'crump sync' in cmd:
+                    # Add --db-url if not present and it's dry-run
+                    if '--dry-run' in cmd and '--db-url' not in cmd:
+                        cmd = cmd.replace('--dry-run', '--db-url sqlite:///test.db --dry-run')
+                    elif '--dry-run' not in cmd:
+                        # Non dry-run sync needs real database, skip
+                        continue
 
                 # Execute the command
                 try:

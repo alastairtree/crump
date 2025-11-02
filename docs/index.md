@@ -41,18 +41,18 @@ Examines and syncs CSV and CDF science files into PostgreSQL or SQLite databases
 
 ```bash
 # Create a configuration file
-crump prepare users_2025-01-01_v01.csv crump_config.yaml users_sync
+crump prepare users.csv --config crump_config.yaml --job users_sync
 
-# preview changes first
-crump sync users_2025-01-01_v01.csv crump_config.yaml users_sync --dry-run
+# preview changes first (requires --db-url or DATABASE_URL)
+export DATABASE_URL="sqlite:///test.db"
+crump sync users.csv crump_config.yaml --job users_sync --dry-run
 
 # Sync the file to database
-export DATABASE_URL="postgresql://localhost/mydb"
-crump sync users_2025-01-01_v01.csv crump_config.yaml users_sync
+crump sync users.csv crump_config.yaml --job users_sync
 
 # Later that day the v2 of the file arrives
-# Sync the new file, old records from v1 are removed automatically, updates are applied to rows that match base on primary key
-crump sync users_2025-01-01_v02.csv crump_config.yaml users_sync
+# Sync the new file, old records from v1 are removed automatically, updates are applied to rows that match based on primary key
+crump sync users_v2.csv crump_config.yaml --job users_sync
 ```
 
 ## Use Cases

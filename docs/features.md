@@ -331,7 +331,7 @@ indexes:
 The `prepare` command suggests indexes automatically:
 
 ```bash
-crump prepare activity_log.csv crump_config.yaml user_activity
+crump prepare activity_log.csv --config crump_config.yaml --job user_activity
 ```
 
 **Rules**:
@@ -363,7 +363,8 @@ Preview all changes without modifying the database.
 ### Usage
 
 ```bash
-crump sync data.csv crump_config.yaml my_job --dry-run
+export DATABASE_URL="sqlite:///test.db"
+crump sync data.csv crump_config.yaml --job my_job --dry-run
 ```
 
 ### What it Shows
