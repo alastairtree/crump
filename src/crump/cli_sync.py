@@ -8,6 +8,7 @@ from rich.console import Console
 
 from crump.cdf_extractor import extract_cdf_to_csv
 from crump.config import CrumpConfig
+from crump.console_utils import BULLET, CHECKMARK, HORIZONTAL_LINE
 from crump.database import sync_csv_to_db, sync_csv_to_db_dry_run
 
 console = Console()
@@ -226,47 +227,49 @@ def sync(
 
             # Display dry-run summary
             console.print("\n[bold yellow]Dry-run Summary[/bold yellow]")
-            console.print(f"[dim]{'─' * 60}[/dim]")
+            console.print(f"[dim]{HORIZONTAL_LINE * 60}[/dim]")
 
             # Schema changes
             if not summary.table_exists:
-                console.print(f"[yellow]  • Table '{summary.table_name}' would be CREATED[/yellow]")
+                console.print(
+                    f"[yellow]  {BULLET} Table '{summary.table_name}' would be CREATED[/yellow]"
+                )
             else:
-                console.print(f"[green]  • Table '{summary.table_name}' exists[/green]")
+                console.print(f"[green]  {BULLET} Table '{summary.table_name}' exists[/green]")
 
                 if summary.new_columns:
                     console.print(
-                        f"[yellow]  • {len(summary.new_columns)} column(s) would be ADDED:[/yellow]"
+                        f"[yellow]  {BULLET} {len(summary.new_columns)} column(s) would be ADDED:[/yellow]"
                     )
                     for col_name, col_type in summary.new_columns:
                         console.print(f"[dim]      - {col_name} ({col_type})[/dim]")
                 else:
-                    console.print("[green]  • No new columns needed[/green]")
+                    console.print(f"[green]  {BULLET} No new columns needed[/green]")
 
                 if summary.new_indexes:
                     console.print(
-                        f"[yellow]  • {len(summary.new_indexes)} index(es) would be CREATED:[/yellow]"
+                        f"[yellow]  {BULLET} {len(summary.new_indexes)} index(es) would be CREATED:[/yellow]"
                     )
                     for idx_name in summary.new_indexes:
                         console.print(f"[dim]      - {idx_name}[/dim]")
                 else:
-                    console.print("[green]  • No new indexes needed[/green]")
+                    console.print(f"[green]  {BULLET} No new indexes needed[/green]")
 
             # Data changes
             console.print("\n[bold]Data Changes:[/bold]")
             console.print(
-                f"[green]  • {summary.rows_to_sync} row(s) would be inserted/updated[/green]"
+                f"[green]  {BULLET} {summary.rows_to_sync} row(s) would be inserted/updated[/green]"
             )
 
             if filename_values and summary.rows_to_delete > 0:
                 console.print(
-                    f"[yellow]  • {summary.rows_to_delete} stale row(s) would be deleted[/yellow]"
+                    f"[yellow]  {BULLET} {summary.rows_to_delete} stale row(s) would be deleted[/yellow]"
                 )
             elif filename_values:
-                console.print("[green]  • No stale rows to delete[/green]")
+                console.print(f"[green]  {BULLET} No stale rows to delete[/green]")
 
             console.print(
-                "\n[bold green]OK Dry-run complete - no changes made to database[/bold green]"
+                f"\n[bold green]{CHECKMARK} Dry-run complete - no changes made to database[/bold green]"
             )
             console.print(f"[dim]  Source file: {file_path}[/dim]")
             if csv_file_to_sync != file_path:
@@ -278,7 +281,7 @@ def sync(
             console.print(f"[cyan]Syncing {csv_file_to_sync.name} using job '{job}'...[/cyan]")
             rows_synced = sync_csv_to_db(csv_file_to_sync, crump_job, db_url, filename_values)
 
-            console.print(f"[green]OK Successfully synced {rows_synced} rows[/green]")
+            console.print(f"[green]{CHECKMARK} Successfully synced {rows_synced} rows[/green]")
             console.print(f"[dim]  Table: {crump_job.target_table}[/dim]")
             console.print(f"[dim]  Source file: {file_path}[/dim]")
             if csv_file_to_sync != file_path:

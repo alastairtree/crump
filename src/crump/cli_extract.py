@@ -10,6 +10,7 @@ from rich.table import Table
 
 from crump.cdf_extractor import extract_cdf_to_csv, extract_cdf_with_config
 from crump.config import CrumpConfig
+from crump.console_utils import CHECKMARK
 
 console = Console()
 
@@ -296,7 +297,7 @@ def _extract_with_config(
             continue
 
     # Final summary
-    console.print("[bold green]OK Extraction complete[/bold green]")
+    console.print(f"[bold green]{CHECKMARK} Extraction complete[/bold green]")
     console.print(f"[dim]  Created {total_files_created} CSV file(s)[/dim]")
     console.print(f"[dim]  Total rows extracted: {total_rows:,}[/dim]")
     console.print(f"[dim]  Output directory: {output_dir.absolute()}[/dim]")
@@ -397,7 +398,7 @@ def _extract_raw(
                 continue
 
         # Final summary
-        console.print("[bold green]OK Extraction complete[/bold green]")
+        console.print(f"[bold green]{CHECKMARK} Extraction complete[/bold green]")
         console.print(f"[dim]  Created/updated {total_files_created} CSV file(s)[/dim]")
         console.print(f"[dim]  Total rows extracted: {total_rows:,}[/dim]")
         console.print(f"[dim]  Output directory: {output_dir.absolute()}[/dim]")
