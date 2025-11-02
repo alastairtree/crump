@@ -26,7 +26,7 @@ You can either create a configuration file manually or use the `prepare` command
 === "Automatic (Recommended)"
 
     ```bash
-    crump prepare users.csv crump_config.yaml users_sync
+    crump prepare users.csv --config crump_config.yaml --job users_sync
     ```
 
     This will:
@@ -54,7 +54,7 @@ You can either create a configuration file manually or use the `prepare` command
 ## Step 4: Set Database URL
 
 ```bash
-export DATABASE_URL="postgresql://user:password@localhost:5432/mydb"
+export DATABASE_URL="sqlite:///test.db"
 ```
 
 ## Step 5: Preview Changes (Optional)
@@ -62,7 +62,7 @@ export DATABASE_URL="postgresql://user:password@localhost:5432/mydb"
 Before syncing, you can preview what changes will be made:
 
 ```bash
-crump sync users.csv crump_config.yaml users_sync --dry-run
+crump sync users.csv crump_config.yaml --job users_sync --dry-run
 ```
 
 This shows:
@@ -75,7 +75,7 @@ This shows:
 ## Step 6: Sync Your Data
 
 ```bash
-crump sync users.csv crump_config.yaml users_sync
+crump sync users.csv crump_config.yaml --job users_sync
 ```
 
 You should see output like:
@@ -120,7 +120,7 @@ The sync is **idempotent** - you can run it multiple times safely:
 # Change Alice's email to alice.new@example.com
 
 # Run sync again
-crump sync users.csv crump_config.yaml users_sync
+crump sync users.csv crump_config.yaml --job users_sync
 ```
 
 The existing rows are updated, no duplicates are created.

@@ -495,7 +495,7 @@ indexes:
 The `prepare` command automatically suggests indexes:
 
 ```bash
-crump prepare activity_log.csv crump_config.yaml user_activity
+crump prepare activity_log.csv --config crump_config.yaml --job user_activity
 ```
 
 Suggestion rules:

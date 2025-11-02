@@ -29,9 +29,9 @@ job = config.get_job("my_job")
 
 # Sync a CSV file
 rows_synced = sync_csv_to_db(
-    file_path=Path("data.csv"),
+    file_path=Path("users.csv"),
     crump_job=job,
-    db_url="postgresql://user:pass@localhost/mydb"
+    db_url="sqlite:///test.db"
 )
 print(f"Synced {rows_synced} rows")
 ```
@@ -80,15 +80,15 @@ job = config.get_job("users_sync")
 rows = sync_csv_to_db(
     file_path=Path("users.csv"),
     crump_job=job,
-    db_url="postgresql://localhost/mydb"
+    db_url="sqlite:///test.db"
 )
 
 # With filename extraction
 filename_values = {"date": "2024-01-15"}
 rows = sync_csv_to_db(
-    file_path=Path("sales_2024-01-15.csv"),
+    file_path=Path("users.csv"),
     crump_job=job,
-    db_url="postgresql://localhost/mydb",
+    db_url="sqlite:///test.db",
     filename_values=filename_values
 )
 ```
@@ -129,9 +129,9 @@ config = CrumpConfig.from_yaml(Path("crump_config.yaml"))
 job = config.get_job("my_job")
 
 summary = sync_csv_to_db_dry_run(
-    file_path=Path("data.csv"),
+    file_path=Path("users.csv"),
     crump_job=job,
-    db_url="postgresql://localhost/mydb"
+    db_url="sqlite:///test.db"
 )
 
 print(f"Table exists: {summary.table_exists}")
@@ -170,7 +170,7 @@ def analyze_csv_types_and_nullable(
 from pathlib import Path
 from crump import analyze_csv_types_and_nullable
 
-column_info = analyze_csv_types_and_nullable(Path("data.csv"))
+column_info = analyze_csv_types_and_nullable(Path("users.csv"))
 
 for col_name, (data_type, nullable) in column_info.items():
     null_str = "NULL" if nullable else "NOT NULL"
@@ -448,7 +448,7 @@ from crump import (
 )
 
 # Analyze a CSV file
-csv_path = Path("sales.csv")
+csv_path = Path("users.csv")
 column_info = analyze_csv_types_and_nullable(csv_path)
 columns = list(column_info.keys())
 id_column = suggest_id_column(columns)
@@ -498,7 +498,7 @@ filename_values = job.filename_to_column.extract_values_from_filename(csv_path)
 summary = sync_csv_to_db_dry_run(
     file_path=csv_path,
     crump_job=job,
-    db_url="postgresql://localhost/mydb",
+    db_url="sqlite:///test.db",
     filename_values=filename_values
 )
 
@@ -512,7 +512,7 @@ if input("Proceed with sync? (y/n): ").lower() == "y":
     rows = sync_csv_to_db(
         file_path=csv_path,
         crump_job=job,
-        db_url="postgresql://localhost/mydb",
+        db_url="sqlite:///test.db",
         filename_values=filename_values
     )
     print(f"\nSynced {rows} rows successfully!")
@@ -533,9 +533,9 @@ try:
         exit(1)
 
     rows = sync_csv_to_db(
-        file_path=Path("data.csv"),
+        file_path=Path("users.csv"),
         crump_job=job,
-        db_url="postgresql://localhost/mydb"
+        db_url="sqlite:///test.db"
     )
     print(f"Success: {rows} rows synced")
 
@@ -560,7 +560,7 @@ def sync_data(csv_file: Path, job: CrumpJob) -> None:
     rows: int = sync_csv_to_db(
         file_path=csv_file,
         crump_job=job,
-        db_url="postgresql://localhost/mydb"
+        db_url="sqlite:///test.db"
     )
     # rows is guaranteed to be int
     print(f"Synced {rows} rows")

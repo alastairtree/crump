@@ -468,7 +468,7 @@ sqlite:///path/to/database.db
 
 ```bash
 # 1. Analyze CSV and create config
-crump prepare data.csv crump_config.yaml my_job
+crump prepare data.csv --config crump_config.yaml --job my_job
 
 # 2. Review generated crump_config.yaml
 cat crump_config.yaml
@@ -503,7 +503,7 @@ done
 
 ```bash
 # Update existing job with --force
-crump prepare new_data.csv crump_config.yaml my_job --force
+crump prepare new_data.csv --config crump_config.yaml --job my_job --force
 
 # Review changes
 git diff crump_config.yaml
