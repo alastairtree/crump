@@ -30,7 +30,7 @@ For development or to get the latest unreleased features:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/crump.git
+git clone https://github.com/alastairtree/crump.git
 cd crump
 
 # Install with uv (recommended)

@@ -21,14 +21,14 @@ pip install crump
 
 ```python
 from pathlib import Path
-from crump import sync_csv_to_postgres, CrumpConfig
+from crump import sync_csv_to_db, CrumpConfig
 
 # Load configuration
 config = CrumpConfig.from_yaml(Path("crump_config.yaml"))
 job = config.get_job("my_job")
 
 # Sync a CSV file
-rows_synced = sync_csv_to_postgres(
+rows_synced = sync_csv_to_db(
     file_path=Path("data.csv"),
     crump_job=job,
     db_url="postgresql://user:pass@localhost/mydb"
@@ -38,12 +38,12 @@ print(f"Synced {rows_synced} rows")
 
 ## Core Functions
 
-### sync_csv_to_postgres
+### sync_csv_to_db
 
-Sync a CSV file to PostgreSQL.
+Sync a CSV file to a database (PostgreSQL or SQLite).
 
 ```python
-def sync_csv_to_postgres(
+def sync_csv_to_db(
     file_path: Path,
     crump_job: CrumpJob,
     db_url: str,
@@ -71,13 +71,13 @@ def sync_csv_to_postgres(
 
 ```python
 from pathlib import Path
-from crump import sync_csv_to_postgres, CrumpConfig
+from crump import sync_csv_to_db, CrumpConfig
 
 config = CrumpConfig.from_yaml(Path("crump_config.yaml"))
 job = config.get_job("users_sync")
 
 # Basic sync
-rows = sync_csv_to_postgres(
+rows = sync_csv_to_db(
     file_path=Path("users.csv"),
     crump_job=job,
     db_url="postgresql://localhost/mydb"
@@ -85,7 +85,7 @@ rows = sync_csv_to_postgres(
 
 # With filename extraction
 filename_values = {"date": "2024-01-15"}
-rows = sync_csv_to_postgres(
+rows = sync_csv_to_db(
     file_path=Path("sales_2024-01-15.csv"),
     crump_job=job,
     db_url="postgresql://localhost/mydb",
@@ -93,12 +93,12 @@ rows = sync_csv_to_postgres(
 )
 ```
 
-### sync_csv_to_postgres_dry_run
+### sync_csv_to_db_dry_run
 
 Preview sync without making database changes.
 
 ```python
-def sync_csv_to_postgres_dry_run(
+def sync_csv_to_db_dry_run(
     file_path: Path,
     crump_job: CrumpJob,
     db_url: str,
@@ -106,7 +106,7 @@ def sync_csv_to_postgres_dry_run(
 ) -> DryRunSummary
 ```
 
-**Parameters**: Same as `sync_csv_to_postgres`
+**Parameters**: Same as `sync_csv_to_db`
 
 **Returns**: `DryRunSummary` object with:
 
@@ -123,12 +123,12 @@ def sync_csv_to_postgres_dry_run(
 
 ```python
 from pathlib import Path
-from crump import sync_csv_to_postgres_dry_run, CrumpConfig
+from crump import sync_csv_to_db_dry_run, CrumpConfig
 
 config = CrumpConfig.from_yaml(Path("crump_config.yaml"))
 job = config.get_job("my_job")
 
-summary = sync_csv_to_postgres_dry_run(
+summary = sync_csv_to_db_dry_run(
     file_path=Path("data.csv"),
     crump_job=job,
     db_url="postgresql://localhost/mydb"
@@ -441,8 +441,8 @@ from crump import (
     FilenameColumnMapping,
     Index,
     IndexColumn,
-    sync_csv_to_postgres,
-    sync_csv_to_postgres_dry_run,
+    sync_csv_to_db,
+    sync_csv_to_db_dry_run,
     analyze_csv_types_and_nullable,
     suggest_id_column,
 )
@@ -495,7 +495,7 @@ config.save_to_yaml(Path("crump_config.yaml"))
 filename_values = job.filename_to_column.extract_values_from_filename(csv_path)
 
 # Dry-run first
-summary = sync_csv_to_postgres_dry_run(
+summary = sync_csv_to_db_dry_run(
     file_path=csv_path,
     crump_job=job,
     db_url="postgresql://localhost/mydb",
@@ -509,7 +509,7 @@ print(f"  Rows to delete: {summary.rows_to_delete}")
 
 # Confirm and sync
 if input("Proceed with sync? (y/n): ").lower() == "y":
-    rows = sync_csv_to_postgres(
+    rows = sync_csv_to_db(
         file_path=csv_path,
         crump_job=job,
         db_url="postgresql://localhost/mydb",
@@ -522,7 +522,7 @@ if input("Proceed with sync? (y/n): ").lower() == "y":
 
 ```python
 from pathlib import Path
-from crump import sync_csv_to_postgres, CrumpConfig
+from crump import sync_csv_to_db, CrumpConfig
 
 try:
     config = CrumpConfig.from_yaml(Path("crump_config.yaml"))
@@ -532,7 +532,7 @@ try:
         print("Job not found in configuration")
         exit(1)
 
-    rows = sync_csv_to_postgres(
+    rows = sync_csv_to_db(
         file_path=Path("data.csv"),
         crump_job=job,
         db_url="postgresql://localhost/mydb"
@@ -553,11 +553,11 @@ All functions include full type hints for IDE autocomplete and type checking:
 
 ```python
 from pathlib import Path
-from crump import sync_csv_to_postgres, CrumpJob
+from crump import sync_csv_to_db, CrumpJob
 
 # Type checker knows the types
 def sync_data(csv_file: Path, job: CrumpJob) -> None:
-    rows: int = sync_csv_to_postgres(
+    rows: int = sync_csv_to_db(
         file_path=csv_file,
         crump_job=job,
         db_url="postgresql://localhost/mydb"

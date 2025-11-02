@@ -14,7 +14,7 @@ Guide for contributing to crump development.
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/crump.git
+git clone https://github.com/alastairtree/crump.git
 cd crump
 
 # Install with uv (recommended)
@@ -170,7 +170,7 @@ Test behavior, not implementation:
 # Good: Tests behavior
 def test_sync_updates_existing_rows(self):
     # First sync
-    sync_csv_to_postgres(...)
+    sync_csv_to_db(...)
     # Update CSV
     # Second sync
     # Verify rows are updated, not duplicated
