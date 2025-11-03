@@ -1365,26 +1365,6 @@ class DatabaseConnection:
                     # Don't fail the sync if history recording fails
                     logger.warning(f"Failed to record sync history: {hist_error}")
 
-    # Backward compatibility method aliases
-    def sync_csv_file(
-        self,
-        csv_path: Path,  # noqa: ARG002
-        job: CrumpJob,  # noqa: ARG002
-        filename_values: dict[str, str] | None = None,  # noqa: ARG002
-        enable_history: bool = False,  # noqa: ARG002
-    ) -> int:
-        """Deprecated: use sync_tabular_file instead."""
-        return self.sync_tabular_file(csv_path, job, filename_values, enable_history)
-
-    def sync_csv_file_dry_run(
-        self,
-        csv_path: Path,  # noqa: ARG002
-        job: CrumpJob,  # noqa: ARG002
-        filename_values: dict[str, str] | None = None,  # noqa: ARG002
-    ) -> DryRunSummary:
-        """Deprecated: use sync_tabular_file_dry_run instead."""
-        return self.sync_tabular_file_dry_run(csv_path, job, filename_values)
-
 
 def sync_tabular_file_to_db(
     file_path: Path,
@@ -1431,7 +1411,3 @@ def sync_tabular_file_to_db_dry_run(
 
 
 # Backward compatibility aliases
-sync_csv_to_db = sync_tabular_file_to_db  # Deprecated: use sync_tabular_file_to_db
-sync_csv_to_db_dry_run = (
-    sync_tabular_file_to_db_dry_run  # Deprecated: use sync_tabular_file_to_db_dry_run
-)

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from crump.cdf_extractor import extract_cdf_to_csv, extract_cdf_with_config
+from crump.cdf_extractor import extract_cdf_to_tabular_file, extract_cdf_with_config
 from crump.cdf_reader import read_cdf_variables
 from crump.config import ColumnMapping, CrumpJob
 
@@ -55,7 +55,7 @@ def test_read_cdf_variables_imap(imap_cdf_file: Path) -> None:
 
 def test_extract_with_automerge(solo_cdf_file: Path, tmp_path: Path) -> None:
     """Test extracting CDF with automerge enabled."""
-    results = extract_cdf_to_csv(
+    results = extract_cdf_to_tabular_file(
         cdf_file_path=solo_cdf_file,
         output_dir=tmp_path,
         filename_template="[SOURCE_FILE]-[VARIABLE_NAME].csv",
@@ -83,7 +83,7 @@ def test_extract_with_automerge(solo_cdf_file: Path, tmp_path: Path) -> None:
 
 def test_extract_without_automerge(solo_cdf_file: Path, tmp_path: Path) -> None:
     """Test extracting CDF with automerge disabled."""
-    results = extract_cdf_to_csv(
+    results = extract_cdf_to_tabular_file(
         cdf_file_path=solo_cdf_file,
         output_dir=tmp_path,
         filename_template="[SOURCE_FILE]-[VARIABLE_NAME].csv",
@@ -104,7 +104,7 @@ def test_extract_specific_variables(imap_cdf_file: Path, tmp_path: Path) -> None
     """Test extracting specific variables only."""
     requested_vars = ["vectors", "epoch"]
 
-    results = extract_cdf_to_csv(
+    results = extract_cdf_to_tabular_file(
         cdf_file_path=imap_cdf_file,
         output_dir=tmp_path,
         filename_template="[SOURCE_FILE]-[VARIABLE_NAME].csv",
@@ -124,7 +124,7 @@ def test_extract_specific_variables(imap_cdf_file: Path, tmp_path: Path) -> None
 def test_extract_nonexistent_variable(solo_cdf_file: Path, tmp_path: Path) -> None:
     """Test extracting a variable that doesn't exist."""
     with pytest.raises(ValueError, match="Variables not found"):
-        extract_cdf_to_csv(
+        extract_cdf_to_tabular_file(
             cdf_file_path=solo_cdf_file,
             output_dir=tmp_path,
             filename_template="[SOURCE_FILE]-[VARIABLE_NAME].csv",
@@ -136,7 +136,7 @@ def test_extract_nonexistent_variable(solo_cdf_file: Path, tmp_path: Path) -> No
 
 def test_extract_with_custom_filename_template(solo_cdf_file: Path, tmp_path: Path) -> None:
     """Test extraction with custom filename template."""
-    results = extract_cdf_to_csv(
+    results = extract_cdf_to_tabular_file(
         cdf_file_path=solo_cdf_file,
         output_dir=tmp_path,
         filename_template="data_[VARIABLE_NAME].csv",
@@ -152,7 +152,7 @@ def test_extract_with_custom_filename_template(solo_cdf_file: Path, tmp_path: Pa
 def test_extract_with_append_mode(solo_cdf_file: Path, tmp_path: Path) -> None:
     """Test extraction with append mode."""
     # First extraction
-    results1 = extract_cdf_to_csv(
+    results1 = extract_cdf_to_tabular_file(
         cdf_file_path=solo_cdf_file,
         output_dir=tmp_path,
         filename_template="[SOURCE_FILE]-[VARIABLE_NAME].csv",
@@ -166,7 +166,7 @@ def test_extract_with_append_mode(solo_cdf_file: Path, tmp_path: Path) -> None:
     output_file = results1[0].output_file
 
     # Second extraction with append
-    extract_cdf_to_csv(
+    extract_cdf_to_tabular_file(
         cdf_file_path=solo_cdf_file,
         output_dir=tmp_path,
         filename_template="[SOURCE_FILE]-[VARIABLE_NAME].csv",
@@ -186,7 +186,7 @@ def test_extract_with_append_mode(solo_cdf_file: Path, tmp_path: Path) -> None:
 def test_extract_file_exists_error(solo_cdf_file: Path, tmp_path: Path) -> None:
     """Test that extraction fails if file exists and append is False."""
     # First extraction
-    extract_cdf_to_csv(
+    extract_cdf_to_tabular_file(
         cdf_file_path=solo_cdf_file,
         output_dir=tmp_path,
         filename_template="[SOURCE_FILE]-[VARIABLE_NAME].csv",
@@ -197,7 +197,7 @@ def test_extract_file_exists_error(solo_cdf_file: Path, tmp_path: Path) -> None:
 
     # Second extraction without append should fail
     with pytest.raises(FileExistsError, match="Output file already exists"):
-        extract_cdf_to_csv(
+        extract_cdf_to_tabular_file(
             cdf_file_path=solo_cdf_file,
             output_dir=tmp_path,
             filename_template="[SOURCE_FILE]-[VARIABLE_NAME].csv",
@@ -218,7 +218,7 @@ def test_extract_append_header_mismatch(solo_cdf_file: Path, tmp_path: Path) -> 
 
     # Try to append with different headers
     with pytest.raises(ValueError, match="existing file has different columns"):
-        extract_cdf_to_csv(
+        extract_cdf_to_tabular_file(
             cdf_file_path=solo_cdf_file,
             output_dir=tmp_path,
             filename_template="[SOURCE_FILE]-[VARIABLE_NAME].csv",
@@ -230,7 +230,7 @@ def test_extract_append_header_mismatch(solo_cdf_file: Path, tmp_path: Path) -> 
 
 def test_extract_filename_uses_first_variable(imap_cdf_file: Path, tmp_path: Path) -> None:
     """Test that merged CSV files use the first variable name in filename."""
-    results = extract_cdf_to_csv(
+    results = extract_cdf_to_tabular_file(
         cdf_file_path=imap_cdf_file,
         output_dir=tmp_path,
         filename_template="[SOURCE_FILE]-[VARIABLE_NAME].csv",
@@ -255,7 +255,7 @@ def test_extract_filename_collision_adds_suffix(solo_cdf_file: Path, tmp_path: P
     # We'll extract variables with the same name pattern
 
     # Extract with automerge disabled to get separate files
-    results = extract_cdf_to_csv(
+    results = extract_cdf_to_tabular_file(
         cdf_file_path=solo_cdf_file,
         output_dir=tmp_path,
         filename_template="test.csv",  # Same name for all
@@ -276,7 +276,7 @@ def test_extract_filename_collision_adds_suffix(solo_cdf_file: Path, tmp_path: P
 
 def test_extract_array_variables_column_expansion(imap_cdf_file: Path, tmp_path: Path) -> None:
     """Test that array variables are expanded into multiple columns."""
-    results = extract_cdf_to_csv(
+    results = extract_cdf_to_tabular_file(
         cdf_file_path=imap_cdf_file,
         output_dir=tmp_path,
         filename_template="[SOURCE_FILE]-[VARIABLE_NAME].csv",
@@ -302,7 +302,7 @@ def test_extract_creates_output_directory(solo_cdf_file: Path, tmp_path: Path) -
 
     assert not output_dir.exists()
 
-    results = extract_cdf_to_csv(
+    results = extract_cdf_to_tabular_file(
         cdf_file_path=solo_cdf_file,
         output_dir=output_dir,
         filename_template="[SOURCE_FILE]-[VARIABLE_NAME].csv",
@@ -317,7 +317,7 @@ def test_extract_creates_output_directory(solo_cdf_file: Path, tmp_path: Path) -
 
 def test_extract_merges_same_record_count_variables(imap_cdf_file: Path, tmp_path: Path) -> None:
     """Test that variables with the same record count are merged when automerge is True."""
-    results = extract_cdf_to_csv(
+    results = extract_cdf_to_tabular_file(
         cdf_file_path=imap_cdf_file,
         output_dir=tmp_path,
         filename_template="[SOURCE_FILE]-[VARIABLE_NAME].csv",
@@ -357,7 +357,7 @@ def test_cdf_variable_column_names_with_labels(solo_cdf_file: Path) -> None:
 
 def test_unique_column_names(solo_cdf_file: Path, tmp_path: Path) -> None:
     """Test that all column names in extracted CSV are unique."""
-    results = extract_cdf_to_csv(
+    results = extract_cdf_to_tabular_file(
         cdf_file_path=solo_cdf_file,
         output_dir=tmp_path,
         filename_template="[SOURCE_FILE]-[VARIABLE_NAME].csv",
@@ -375,7 +375,7 @@ def test_extract_with_max_records(solo_cdf_file: Path, tmp_path: Path) -> None:
     """Test extraction with max_records limits the number of rows."""
     max_records = 100
 
-    results = extract_cdf_to_csv(
+    results = extract_cdf_to_tabular_file(
         cdf_file_path=solo_cdf_file,
         output_dir=tmp_path,
         filename_template="[SOURCE_FILE]-[VARIABLE_NAME].csv",
@@ -403,7 +403,7 @@ def test_extract_max_records_larger_than_available(solo_cdf_file: Path, tmp_path
     """Test that max_records larger than available data extracts all data."""
     max_records = 999999  # Larger than available data
 
-    results = extract_cdf_to_csv(
+    results = extract_cdf_to_tabular_file(
         cdf_file_path=solo_cdf_file,
         output_dir=tmp_path,
         filename_template="[SOURCE_FILE]-[VARIABLE_NAME].csv",
@@ -424,7 +424,7 @@ def test_extract_max_records_with_automerge(imap_cdf_file: Path, tmp_path: Path)
     """Test max_records with automerge enabled."""
     max_records = 50
 
-    results = extract_cdf_to_csv(
+    results = extract_cdf_to_tabular_file(
         cdf_file_path=imap_cdf_file,
         output_dir=tmp_path,
         filename_template="[SOURCE_FILE]-[VARIABLE_NAME].csv",
@@ -450,7 +450,7 @@ def test_extract_max_records_with_automerge(imap_cdf_file: Path, tmp_path: Path)
 
 def test_extract_max_records_none_extracts_all(solo_cdf_file: Path, tmp_path: Path) -> None:
     """Test that max_records=None extracts all data."""
-    results = extract_cdf_to_csv(
+    results = extract_cdf_to_tabular_file(
         cdf_file_path=solo_cdf_file,
         output_dir=tmp_path,
         filename_template="[SOURCE_FILE]-[VARIABLE_NAME].csv",
@@ -598,7 +598,7 @@ def test_extract_cdf_to_parquet(solo_cdf_file: Path, tmp_path: Path) -> None:
     """Test extracting CDF file to Parquet format."""
     from crump.tabular_file import create_reader
 
-    results = extract_cdf_to_csv(
+    results = extract_cdf_to_tabular_file(
         cdf_file_path=solo_cdf_file,
         output_dir=tmp_path,
         filename_template="[SOURCE_FILE]-[VARIABLE_NAME].parquet",
@@ -629,7 +629,7 @@ def test_extract_cdf_to_parquet_specific_variables(solo_cdf_file: Path, tmp_path
     """Test extracting specific variables from CDF to Parquet."""
     from crump.tabular_file import create_reader
 
-    results = extract_cdf_to_csv(
+    results = extract_cdf_to_tabular_file(
         cdf_file_path=solo_cdf_file,
         output_dir=tmp_path,
         filename_template="[SOURCE_FILE]-[VARIABLE_NAME].parquet",
@@ -704,7 +704,7 @@ def test_extract_parquet_append_mode(solo_cdf_file: Path, tmp_path: Path) -> Non
     from crump.tabular_file import create_reader
 
     # First extraction
-    results1 = extract_cdf_to_csv(
+    results1 = extract_cdf_to_tabular_file(
         cdf_file_path=solo_cdf_file,
         output_dir=tmp_path,
         filename_template="[SOURCE_FILE]-[VARIABLE_NAME].parquet",
@@ -720,7 +720,7 @@ def test_extract_parquet_append_mode(solo_cdf_file: Path, tmp_path: Path) -> Non
     output_file = results1[0].output_file
 
     # Second extraction with append
-    extract_cdf_to_csv(
+    extract_cdf_to_tabular_file(
         cdf_file_path=solo_cdf_file,
         output_dir=tmp_path,
         filename_template="[SOURCE_FILE]-[VARIABLE_NAME].parquet",
