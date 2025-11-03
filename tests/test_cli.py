@@ -347,3 +347,326 @@ class TestDryRunCommand:
 
         count = execute_query(db_url, "SELECT COUNT(*) FROM test_table")
         assert count[0][0] == 1
+
+
+class TestHistoryCommand:
+    """Test suite for sync history tracking functionality."""
+
+    def test_sync_with_history_flag_records_entry(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Test that sync with --history flag records history entry."""
+        from tests.db_test_utils import execute_query
+        from tests.test_helpers import create_config_file, create_csv_file
+
+        # Create CSV and config files
+        csv_file = tmp_path / "data.csv"
+        create_csv_file(
+            csv_file,
+            ["id", "name", "value"],
+            [
+                {"id": "1", "name": "Alice", "value": "100"},
+                {"id": "2", "name": "Bob", "value": "200"},
+            ],
+        )
+
+        config_file = tmp_path / "config.yaml"
+        create_config_file(config_file, "test_job", "test_table", {"id": "id"})
+
+        # Create SQLite database URL
+        db_file = tmp_path / "test.db"
+        db_url = f"sqlite:///{db_file}"
+
+        # Run sync with --history flag
+        result = cli_runner.invoke(
+            main,
+            [
+                "sync",
+                str(csv_file),
+                str(config_file),
+                "--job",
+                "test_job",
+                "--db-url",
+                db_url,
+                "--history",
+            ],
+        )
+
+        # Verify command succeeded
+        assert result.exit_code == 0, f"Command failed: {result.output}"
+        assert "Successfully synced" in result.output
+        assert "History recorded in _crump_history table" in result.output
+
+        # Verify data was synced
+        count = execute_query(db_url, "SELECT COUNT(*) FROM test_table")
+        assert count[0][0] == 2
+
+        # Verify history was recorded
+        history_rows = execute_query(
+            db_url,
+            "SELECT filename, table_name, rows_upserted, rows_deleted, success, error "
+            "FROM _crump_history ORDER BY timestamp DESC LIMIT 1",
+        )
+        assert len(history_rows) == 1
+        row = history_rows[0]
+        assert row[0] == "data.csv"  # filename
+        assert row[1] == "test_table"  # table_name
+        assert row[2] == 2  # rows_upserted
+        assert row[3] == 0  # rows_deleted
+        assert row[4] in (True, 1)  # success
+        assert row[5] is None  # no error
+
+    def test_sync_without_history_flag_no_recording(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Test that sync without --history flag does not record history."""
+        from tests.db_test_utils import execute_query
+        from tests.test_helpers import create_config_file, create_csv_file
+
+        # Create CSV and config files
+        csv_file = tmp_path / "data.csv"
+        create_csv_file(csv_file, ["id", "name"], [{"id": "1", "name": "Alice"}])
+
+        config_file = tmp_path / "config.yaml"
+        create_config_file(config_file, "test_job", "test_table", {"id": "id"})
+
+        # Create SQLite database URL
+        db_file = tmp_path / "test.db"
+        db_url = f"sqlite:///{db_file}"
+
+        # Run sync WITHOUT --history flag
+        result = cli_runner.invoke(
+            main,
+            [
+                "sync",
+                str(csv_file),
+                str(config_file),
+                "--job",
+                "test_job",
+                "--db-url",
+                db_url,
+            ],
+        )
+
+        # Verify command succeeded
+        assert result.exit_code == 0
+        assert "Successfully synced" in result.output
+        assert "History recorded" not in result.output
+
+        # Verify data was synced
+        count = execute_query(db_url, "SELECT COUNT(*) FROM test_table")
+        assert count[0][0] == 1
+
+        # Verify history table was NOT created
+        tables = execute_query(
+            db_url, "SELECT name FROM sqlite_master WHERE type='table' AND name='_crump_history'"
+        )
+        assert len(tables) == 0, "History table should not exist when --history flag not used"
+
+    def test_sync_with_history_captures_errors(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that history captures error details when sync fails."""
+        from tests.db_test_utils import execute_query
+
+        # Create CSV file
+        csv_file = tmp_path / "data.csv"
+        csv_file.write_text("id,name\n1,Alice\n")
+
+        # Create config with invalid column mapping
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+jobs:
+  test_job:
+    target_table: test_table
+    id_mapping:
+      missing_column: id
+"""
+        )
+
+        # Create SQLite database URL
+        db_file = tmp_path / "test.db"
+        db_url = f"sqlite:///{db_file}"
+
+        # Run sync with --history (should fail)
+        result = cli_runner.invoke(
+            main,
+            [
+                "sync",
+                str(csv_file),
+                str(config_file),
+                "--job",
+                "test_job",
+                "--db-url",
+                db_url,
+                "--history",
+            ],
+        )
+
+        # Verify command failed
+        assert result.exit_code != 0
+
+        # Verify history was still recorded despite error
+        history_rows = execute_query(
+            db_url,
+            "SELECT filename, table_name, rows_upserted, success, error "
+            "FROM _crump_history ORDER BY timestamp DESC LIMIT 1",
+        )
+        assert len(history_rows) == 1
+        row = history_rows[0]
+        assert row[0] == "data.csv"
+        assert row[1] == "test_table"
+        assert row[2] == 0  # rows_upserted (failed)
+        assert row[3] in (False, 0)  # success = False
+        assert row[4] is not None  # error message exists
+        assert "missing_column" in row[4]  # error mentions missing column
+
+    def test_sync_dry_run_with_history_no_recording(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Test that dry-run does not record history even with --history flag."""
+        from tests.db_test_utils import execute_query
+        from tests.test_helpers import create_config_file, create_csv_file
+
+        # Create CSV and config files
+        csv_file = tmp_path / "data.csv"
+        create_csv_file(csv_file, ["id", "name"], [{"id": "1", "name": "Alice"}])
+
+        config_file = tmp_path / "config.yaml"
+        create_config_file(config_file, "test_job", "test_table", {"id": "id"})
+
+        # Create SQLite database URL
+        db_file = tmp_path / "test.db"
+        db_url = f"sqlite:///{db_file}"
+
+        # Run sync with --dry-run AND --history
+        result = cli_runner.invoke(
+            main,
+            [
+                "sync",
+                str(csv_file),
+                str(config_file),
+                "--job",
+                "test_job",
+                "--db-url",
+                db_url,
+                "--dry-run",
+                "--history",
+            ],
+        )
+
+        # Verify command succeeded
+        assert result.exit_code == 0
+        assert "DRY RUN" in result.output
+
+        # Verify no tables were created (including history)
+        if db_file.exists():
+            tables = execute_query(db_url, "SELECT name FROM sqlite_master WHERE type='table'")
+            assert len(tables) == 0, "No tables should be created during dry-run"
+
+    def test_sync_history_tracks_schema_changes(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Test that history correctly tracks schema changes."""
+        from tests.db_test_utils import execute_query
+        from tests.test_helpers import create_config_file, create_csv_file
+
+        csv_file = tmp_path / "data.csv"
+        config_file = tmp_path / "config.yaml"
+        create_config_file(config_file, "test_job", "test_table", {"id": "id"})
+
+        db_file = tmp_path / "test.db"
+        db_url = f"sqlite:///{db_file}"
+
+        # First sync - creates table (schema change)
+        create_csv_file(csv_file, ["id", "name"], [{"id": "1", "name": "Alice"}])
+
+        result = cli_runner.invoke(
+            main,
+            [
+                "sync",
+                str(csv_file),
+                str(config_file),
+                "--job",
+                "test_job",
+                "--db-url",
+                db_url,
+                "--history",
+            ],
+        )
+        assert result.exit_code == 0
+
+        # Check first sync marked schema_changed = true
+        history = execute_query(
+            db_url,
+            "SELECT schema_changed FROM _crump_history ORDER BY timestamp DESC LIMIT 1",
+        )
+        assert history[0][0] in (True, 1)  # Schema changed (table created)
+
+        # Second sync - no schema changes
+        create_csv_file(csv_file, ["id", "name"], [{"id": "2", "name": "Bob"}])
+
+        result = cli_runner.invoke(
+            main,
+            [
+                "sync",
+                str(csv_file),
+                str(config_file),
+                "--job",
+                "test_job",
+                "--db-url",
+                db_url,
+                "--history",
+            ],
+        )
+        assert result.exit_code == 0
+
+        # Check second sync marked schema_changed = false
+        history = execute_query(
+            db_url,
+            "SELECT schema_changed FROM _crump_history ORDER BY timestamp DESC LIMIT 1",
+        )
+        assert history[0][0] in (False, 0)  # No schema change
+
+    def test_sync_history_multiple_operations(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that multiple syncs create multiple history entries."""
+        from tests.db_test_utils import execute_query
+        from tests.test_helpers import create_config_file, create_csv_file
+
+        config_file = tmp_path / "config.yaml"
+        create_config_file(config_file, "test_job", "test_table", {"id": "id"})
+
+        db_file = tmp_path / "test.db"
+        db_url = f"sqlite:///{db_file}"
+
+        # Perform 3 syncs with different files
+        for i in range(3):
+            csv_file = tmp_path / f"data_{i}.csv"
+            create_csv_file(csv_file, ["id", "name"], [{"id": str(i), "name": f"User{i}"}])
+
+            result = cli_runner.invoke(
+                main,
+                [
+                    "sync",
+                    str(csv_file),
+                    str(config_file),
+                    "--job",
+                    "test_job",
+                    "--db-url",
+                    db_url,
+                    "--history",
+                ],
+            )
+            assert result.exit_code == 0
+
+        # Verify 3 history entries were created
+        count = execute_query(db_url, "SELECT COUNT(*) FROM _crump_history")
+        assert count[0][0] == 3
+
+        # Verify all entries have correct table name
+        entries = execute_query(
+            db_url, "SELECT table_name, filename FROM _crump_history ORDER BY timestamp"
+        )
+        assert len(entries) == 3
+        for entry in entries:
+            assert entry[0] == "test_table"  # table_name
+            assert entry[1].startswith("data_")  # filename
