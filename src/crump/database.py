@@ -1331,6 +1331,7 @@ class DatabaseConnection:
                     record_sync_history(
                         backend=self.backend,
                         file_path=csv_path,
+                        table_name=job.target_table,
                         rows_upserted=final_rows_synced,
                         rows_deleted=rows_deleted,
                         schema_changed=schema_changed,

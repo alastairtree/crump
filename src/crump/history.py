@@ -18,6 +18,7 @@ class SyncHistoryEntry:
         self,
         timestamp: datetime,
         filename: str,
+        table_name: str,
         rows_upserted: int,
         rows_deleted: int,
         data_hash: str,
@@ -31,6 +32,7 @@ class SyncHistoryEntry:
         Args:
             timestamp: UTC timestamp when sync started for this file
             filename: Name of the file being synced
+            table_name: Target table name for the sync
             rows_upserted: Number of rows inserted or updated
             rows_deleted: Number of rows deleted
             data_hash: Hash of the data file
@@ -41,6 +43,7 @@ class SyncHistoryEntry:
         """
         self.timestamp = timestamp
         self.filename = filename
+        self.table_name = table_name
         self.rows_upserted = rows_upserted
         self.rows_deleted = rows_deleted
         self.data_hash = data_hash
@@ -76,6 +79,7 @@ def _ensure_history_table_exists(backend: DatabaseBackend) -> None:
     columns = {
         "timestamp": backend.map_data_type("timestamp") + " NOT NULL",
         "filename": backend.map_data_type("text") + " NOT NULL",
+        "table_name": backend.map_data_type("text") + " NOT NULL",
         "rows_upserted": backend.map_data_type("integer") + " NOT NULL",
         "rows_deleted": backend.map_data_type("integer") + " NOT NULL",
         "data_hash": backend.map_data_type("text") + " NOT NULL",
@@ -92,6 +96,7 @@ def _ensure_history_table_exists(backend: DatabaseBackend) -> None:
 def record_sync_history(
     backend: DatabaseBackend,
     file_path: Path,
+    table_name: str,
     rows_upserted: int,
     rows_deleted: int,
     schema_changed: bool,
@@ -105,6 +110,7 @@ def record_sync_history(
     Args:
         backend: Database backend to use
         file_path: Path to the file that was synced
+        table_name: Target table name for the sync
         rows_upserted: Number of rows inserted or updated
         rows_deleted: Number of rows deleted
         schema_changed: Whether schema changes were made
@@ -126,6 +132,7 @@ def record_sync_history(
     entry = SyncHistoryEntry(
         timestamp=start_time,
         filename=file_path.name,
+        table_name=table_name,
         rows_upserted=rows_upserted,
         rows_deleted=rows_deleted,
         data_hash=data_hash,
@@ -139,6 +146,7 @@ def record_sync_history(
     row_data = {
         "timestamp": entry.timestamp,
         "filename": entry.filename,
+        "table_name": entry.table_name,
         "rows_upserted": entry.rows_upserted,
         "rows_deleted": entry.rows_deleted,
         "data_hash": entry.data_hash,

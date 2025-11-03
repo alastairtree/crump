@@ -51,6 +51,7 @@ class TestHistoryUtils:
         entry = SyncHistoryEntry(
             timestamp=timestamp,
             filename="test.csv",
+            table_name="test_table",
             rows_upserted=10,
             rows_deleted=2,
             data_hash="abc123",
@@ -62,6 +63,7 @@ class TestHistoryUtils:
 
         assert entry.timestamp == timestamp
         assert entry.filename == "test.csv"
+        assert entry.table_name == "test_table"
         assert entry.rows_upserted == 10
         assert entry.rows_deleted == 2
         assert entry.data_hash == "abc123"
@@ -76,6 +78,7 @@ class TestHistoryUtils:
         entry = SyncHistoryEntry(
             timestamp=timestamp,
             filename="test.csv",
+            table_name="test_table",
             rows_upserted=0,
             rows_deleted=0,
             data_hash="abc123",
@@ -87,6 +90,7 @@ class TestHistoryUtils:
 
         assert entry.success is False
         assert entry.error == "Test error message"
+        assert entry.table_name == "test_table"
 
 
 class TestHistoryIntegration:
@@ -105,6 +109,7 @@ class TestHistoryIntegration:
             columns = get_table_columns(db_url, "_crump_history")
             assert "timestamp" in columns
             assert "filename" in columns
+            assert "table_name" in columns
             assert "rows_upserted" in columns
             assert "rows_deleted" in columns
             assert "data_hash" in columns
@@ -126,6 +131,7 @@ class TestHistoryIntegration:
             record_sync_history(
                 backend=db.backend,
                 file_path=test_file,
+                table_name="test_table",
                 rows_upserted=1,
                 rows_deleted=0,
                 schema_changed=True,
@@ -138,18 +144,19 @@ class TestHistoryIntegration:
         # Verify history record
         rows = execute_query(
             db_url,
-            "SELECT filename, rows_upserted, rows_deleted, schema_changed, success, error "
+            "SELECT filename, table_name, rows_upserted, rows_deleted, schema_changed, success, error "
             "FROM _crump_history ORDER BY timestamp DESC LIMIT 1",
         )
         assert len(rows) == 1
         row = rows[0]
         assert row[0] == "test.csv"  # filename
-        assert row[1] == 1  # rows_upserted
-        assert row[2] == 0  # rows_deleted
+        assert row[1] == "test_table"  # table_name
+        assert row[2] == 1  # rows_upserted
+        assert row[3] == 0  # rows_deleted
         # SQLite stores booleans as 0/1, PostgreSQL stores as True/False
-        assert row[3] in (True, 1)  # schema_changed (BOOLEAN)
-        assert row[4] in (True, 1)  # success (BOOLEAN)
-        assert row[5] is None  # error
+        assert row[4] in (True, 1)  # schema_changed (BOOLEAN)
+        assert row[5] in (True, 1)  # success (BOOLEAN)
+        assert row[6] is None  # error
 
     def test_record_sync_history_failure(self, tmp_path: Path, db_url: str) -> None:
         """Test recording a failed sync to history."""
@@ -164,6 +171,7 @@ class TestHistoryIntegration:
             record_sync_history(
                 backend=db.backend,
                 file_path=test_file,
+                table_name="test_table",
                 rows_upserted=0,
                 rows_deleted=0,
                 schema_changed=False,
@@ -176,16 +184,17 @@ class TestHistoryIntegration:
         # Verify history record
         rows = execute_query(
             db_url,
-            "SELECT filename, rows_upserted, success, error "
+            "SELECT filename, table_name, rows_upserted, success, error "
             "FROM _crump_history ORDER BY timestamp DESC LIMIT 1",
         )
         assert len(rows) == 1
         row = rows[0]
         assert row[0] == "test.csv"
-        assert row[1] == 0
+        assert row[1] == "test_table"
+        assert row[2] == 0
         # SQLite stores booleans as 0/1, PostgreSQL stores as True/False
-        assert row[2] in (False, 0)  # success
-        assert row[3] == "Test error message"
+        assert row[3] in (False, 0)  # success
+        assert row[4] == "Test error message"
 
     def test_sync_with_history_enabled(self, tmp_path: Path, db_url: str) -> None:
         """Test that sync records history when history is enabled."""
@@ -212,18 +221,19 @@ class TestHistoryIntegration:
         # Verify history details
         history_rows = execute_query(
             db_url,
-            "SELECT filename, rows_upserted, rows_deleted, schema_changed, success, error "
+            "SELECT filename, table_name, rows_upserted, rows_deleted, schema_changed, success, error "
             "FROM _crump_history ORDER BY timestamp DESC LIMIT 1",
         )
         assert len(history_rows) == 1
         row = history_rows[0]
         assert row[0] == "data.csv"
-        assert row[1] == 2  # rows_upserted
-        assert row[2] == 0  # rows_deleted
+        assert row[1] == "test_table"  # table_name
+        assert row[2] == 2  # rows_upserted
+        assert row[3] == 0  # rows_deleted
         # SQLite stores booleans as 0/1, PostgreSQL stores as True/False
-        assert row[3] in (True, 1)  # schema_changed (new table)
-        assert row[4] in (True, 1)  # success
-        assert row[5] is None  # no error
+        assert row[4] in (True, 1)  # schema_changed (new table)
+        assert row[5] in (True, 1)  # success
+        assert row[6] is None  # no error
 
     def test_sync_with_history_disabled(self, tmp_path: Path, db_url: str) -> None:
         """Test that sync does not record history when history is disabled."""
