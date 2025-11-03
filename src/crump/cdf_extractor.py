@@ -1,4 +1,4 @@
-"""CDF to CSV extraction functionality."""
+"""CDF to CSV/Parquet extraction functionality."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import numpy as np
 
 from crump.cdf_reader import CDFVariable, get_column_names_for_variable, read_cdf_variables
 from crump.config import CrumpJob, apply_row_transformations
+from crump.tabular_file import create_writer
 
 
 @dataclass
@@ -188,17 +189,19 @@ def extract_cdf_to_csv(
     append: bool = False,
     variable_names: list[str] | None = None,
     max_records: int | None = None,
+    use_parquet: bool = False,
 ) -> list[ExtractionResult]:
-    """Extract data from a CDF file to CSV files.
+    """Extract data from a CDF file to CSV or Parquet files.
 
     Args:
         cdf_file_path: Path to the CDF file
-        output_dir: Directory to save CSV files
+        output_dir: Directory to save output files
         filename_template: Template for output filenames
         automerge: Whether to merge variables with same record count
         append: Whether to append to existing files
         variable_names: List of specific variables to extract (None = all)
         max_records: Maximum number of records to extract per variable (None = all)
+        use_parquet: Whether to output Parquet format instead of CSV
 
     Returns:
         List of ExtractionResult objects
@@ -298,15 +301,13 @@ def extract_cdf_to_csv(
                     f"Expected columns: {', '.join(all_column_names)}"
                 )
 
-            # Write CSV
-            mode = "a" if append and output_path.exists() else "w"
-            write_header = mode == "w"
+            # Write to file using tabular writer
+            write_append = append and output_path.exists()
+            file_format = "parquet" if use_parquet else "csv"
 
-            with open(output_path, mode, newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-
-                if write_header:
-                    writer.writerow(all_column_names)
+            with create_writer(output_path, file_format=file_format, append=write_append) as writer:
+                # Write header
+                writer.writerow(all_column_names)
 
                 # Transpose data to write rows
                 for row_idx in range(actual_record_count):
@@ -363,15 +364,13 @@ def extract_cdf_to_csv(
                     f"Expected columns: {', '.join(col_names)}"
                 )
 
-            # Write CSV
-            mode = "a" if append and output_path.exists() else "w"
-            write_header = mode == "w"
+            # Write to file using tabular writer
+            write_append = append and output_path.exists()
+            file_format = "parquet" if use_parquet else "csv"
 
-            with open(output_path, mode, newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-
-                if write_header:
-                    writer.writerow(col_names)
+            with create_writer(output_path, file_format=file_format, append=write_append) as writer:
+                # Write header
+                writer.writerow(col_names)
 
                 # Transpose data to write rows
                 for row_idx in range(actual_records):
@@ -402,14 +401,15 @@ def extract_cdf_with_config(
     variable_names: list[str] | None = None,
     append: bool = False,
     filename_template: str = "[SOURCE_FILE]_[VARIABLE_NAME].csv",
+    use_parquet: bool = False,
 ) -> list[ExtractionResult]:
-    """Extract data from a CDF file to CSV using job configuration for column selection and mapping.
+    """Extract data from a CDF file to CSV/Parquet using job configuration for column selection and mapping.
 
     This function extracts CDF data and applies the same column mappings and transformations
-    that would be used when syncing to a database, but outputs to CSV instead.
+    that would be used when syncing to a database, but outputs to CSV/Parquet instead.
 
     A CDF file may contain multiple groups of variables with different record counts, resulting
-    in multiple CSV files. This function attempts to transform each one and returns results
+    in multiple output files. This function attempts to transform each one and returns results
     for those that successfully match the column mappings.
 
     Args:
@@ -468,6 +468,7 @@ def extract_cdf_with_config(
                     raw_result=raw_result,
                     append=append,
                     filename_template=filename_template,
+                    use_parquet=use_parquet,
                 )
 
                 if result:
@@ -500,18 +501,20 @@ def _transform_csv_with_config(
     raw_result: ExtractionResult,
     append: bool = False,
     filename_template: str = "[SOURCE_FILE]_[VARIABLE_NAME].csv",
+    use_parquet: bool = False,
 ) -> ExtractionResult | None:
     """Transform a raw CSV using job configuration.
 
     Args:
         raw_csv_path: Path to raw CSV file
-        output_dir: Output directory for transformed CSV
+        output_dir: Output directory for transformed output file
         cdf_file_path: Original CDF file path
         job: Job configuration
         filename_values: Extracted filename values
         raw_result: Result from raw extraction
         append: Whether to append to existing file
         filename_template: Template for output filename
+        use_parquet: Whether to output Parquet format instead of CSV
 
     Returns:
         ExtractionResult if transformation succeeds, None if CSV doesn't match mappings
@@ -629,14 +632,12 @@ def _transform_csv_with_config(
         f.seek(0)
         reader = csv.DictReader(f)
 
-        # Open in append or write mode
-        mode = "a" if (append and output_path.exists()) else "w"
-        with open(output_path, mode, newline="", encoding="utf-8") as out_f:
-            writer = csv.DictWriter(out_f, fieldnames=output_columns)
-
-            # Only write header if we're not appending or file is new
-            if mode == "w":
-                writer.writeheader()
+        # Write using tabular file writer
+        write_append = append and output_path.exists()
+        file_format = "parquet" if use_parquet else "csv"
+        with create_writer(output_path, file_format=file_format, append=write_append) as writer:
+            # Write header
+            writer.writerow(output_columns)
 
             for row in reader:
                 # Apply column transformations
@@ -648,11 +649,13 @@ def _transform_csv_with_config(
                 if not any(output_row.values()):
                     continue
 
-                writer.writerow(output_row)
+                # Convert dict to list in column order
+                row_list = [output_row.get(col, "") for col in output_columns]
+                writer.writerow(row_list)
                 rows_written += 1
 
         # Only return result if we wrote at least one row
-        if rows_written == 0 and mode == "w":
+        if rows_written == 0 and not write_append:
             output_path.unlink()  # Clean up empty file (only if we created it)
             return None
 

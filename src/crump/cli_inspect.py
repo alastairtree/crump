@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import csv
 from pathlib import Path
 
 import click
 import numpy as np
 from rich.console import Console
 from rich.table import Table
+
+from crump.tabular_file import create_reader
 
 console = Console()
 
@@ -34,17 +35,19 @@ def format_file_size(size_bytes: int) -> str:
     return f"{size:.1f} TB"
 
 
-def inspect_csv(file_path: Path, num_records: int) -> None:
-    """Inspect a CSV file and display summary information.
+def inspect_tabular(file_path: Path, num_records: int) -> None:
+    """Inspect a tabular file (CSV or Parquet) and display summary information.
 
     Args:
-        file_path: Path to the CSV file
+        file_path: Path to the tabular file
         num_records: Number of sample records to display
 
     Raises:
         click.ClickException: If the file cannot be read or parsed
     """
-    console.print(f"\n[bold cyan]CSV File: {file_path.name}[/bold cyan]")
+    # Detect file type for display
+    file_type = "Parquet" if file_path.suffix.lower() in [".parquet", ".pq"] else "CSV"
+    console.print(f"\n[bold cyan]{file_type} File: {file_path.name}[/bold cyan]")
     console.print(f"[dim]Path: {file_path}[/dim]")
 
     # Get file size
@@ -55,11 +58,9 @@ def inspect_csv(file_path: Path, num_records: int) -> None:
         raise click.ClickException(f"Cannot access file: {e}") from e
 
     try:
-        with open(file_path, encoding="utf-8", errors="replace") as f:
-            reader = csv.DictReader(f)
-
+        with create_reader(file_path) as reader:
             if not reader.fieldnames:
-                console.print("[red]Error: No columns found in CSV file[/red]")
+                console.print(f"[red]Error: No columns found in {file_type} file[/red]")
                 return
 
             # Display header
@@ -75,7 +76,9 @@ def inspect_csv(file_path: Path, num_records: int) -> None:
             rows = []
             for i, row in enumerate(reader):
                 if i < num_records:
-                    table.add_row(*[row.get(col, "") for col in reader.fieldnames])
+                    # Convert all values to strings for display
+                    row_values = [str(row.get(col, "")) for col in reader.fieldnames]
+                    table.add_row(*row_values)
                 rows.append(row)
 
             console.print(table)
@@ -87,12 +90,8 @@ def inspect_csv(file_path: Path, num_records: int) -> None:
                 f"{len(reader.fieldnames)} columns, {format_file_size(file_size)}[/green]"
             )
 
-    except csv.Error as e:
-        raise click.ClickException(f"CSV parsing error: {e}") from e
-    except UnicodeDecodeError as e:
-        raise click.ClickException(f"File encoding error: {e}") from e
     except Exception as e:
-        raise click.ClickException(f"Unexpected error reading CSV: {e}") from e
+        raise click.ClickException(f"Unexpected error reading {file_type} file: {e}") from e
 
 
 def _format_attribute_value(attr_values: object) -> str:
@@ -341,10 +340,10 @@ def inspect_cdf(file_path: Path, num_records: int) -> None:
     help="Number of sample records to display (default: 10)",
 )
 def inspect(files: tuple[Path, ...], max_records: int) -> None:
-    """Inspect CSV or CDF files and display summary information.
+    """Inspect CSV, Parquet, or CDF files and display summary information.
 
     Displays file metadata, structure, and sample data for each file.
-    Supports both CSV and CDF file formats.
+    Supports CSV, Parquet, and CDF file formats.
 
     Arguments:
         FILES: One or more file paths to inspect
@@ -353,8 +352,11 @@ def inspect(files: tuple[Path, ...], max_records: int) -> None:
         # Inspect a single CSV file
         crump inspect data.csv
 
+        # Inspect a Parquet file
+        crump inspect data.parquet
+
         # Inspect multiple files with custom record count
-        crump inspect file1.csv file2.cdf --max-records 20
+        crump inspect file1.csv file2.parquet file3.cdf --max-records 20
 
         # Inspect all CSV files in a directory
         crump inspect data/*.csv
@@ -362,9 +364,10 @@ def inspect(files: tuple[Path, ...], max_records: int) -> None:
     try:
         for file_path in files:
             # Determine file type and inspect
-            if file_path.suffix.lower() == ".csv":
-                inspect_csv(file_path, max_records)
-            elif file_path.suffix.lower() == ".cdf":
+            suffix = file_path.suffix.lower()
+            if suffix in [".csv", ".parquet", ".pq"]:
+                inspect_tabular(file_path, max_records)
+            elif suffix == ".cdf":
                 inspect_cdf(file_path, max_records)
             else:
                 console.print(
