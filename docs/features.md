@@ -583,6 +583,114 @@ python validate_output.py output.csv
 
 **Metadata**: CDF attributes and labels are used for intelligent column naming
 
+## Sync History Tracking
+
+Track detailed sync operation history in a `_crump_history` table for auditing and monitoring.
+
+### Enabling History
+
+Add the `--history` flag to record sync operations:
+
+```bash
+crump sync data.csv crump_config.yaml my_job --history
+```
+
+### History Table Schema
+
+The `_crump_history` table is automatically created with the following columns:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `timestamp` | TIMESTAMP | When the sync started (UTC, primary key) |
+| `filename` | TEXT | Name of the file being synced |
+| `rows_upserted` | INTEGER | Number of rows inserted or updated |
+| `rows_deleted` | INTEGER | Number of stale rows deleted |
+| `data_hash` | TEXT | SHA256 hash of the data file |
+| `schema_changed` | BOOLEAN | Whether schema changes were made |
+| `duration_seconds` | FLOAT | Duration of the sync operation |
+| `success` | BOOLEAN | Whether the sync succeeded |
+| `error` | TEXT | Error message if sync failed (NULL if successful) |
+
+### Use Cases
+
+**Audit trail**:
+```sql
+-- View recent sync operations
+SELECT timestamp, filename, rows_upserted, success
+FROM _crump_history
+ORDER BY timestamp DESC
+LIMIT 10;
+```
+
+**Monitor for failures**:
+```sql
+-- Find failed syncs
+SELECT timestamp, filename, error
+FROM _crump_history
+WHERE success = false
+ORDER BY timestamp DESC;
+```
+
+**Track data changes**:
+```sql
+-- Files that caused schema changes
+SELECT filename, timestamp
+FROM _crump_history
+WHERE schema_changed = true;
+```
+
+**Performance monitoring**:
+```sql
+-- Average sync duration by file
+SELECT filename, AVG(duration_seconds) as avg_duration
+FROM _crump_history
+GROUP BY filename
+ORDER BY avg_duration DESC;
+```
+
+**Detect duplicate syncs**:
+```sql
+-- Find files synced multiple times with same hash
+SELECT filename, data_hash, COUNT(*) as sync_count
+FROM _crump_history
+WHERE success = true
+GROUP BY filename, data_hash
+HAVING COUNT(*) > 1;
+```
+
+### Features
+
+- **Automatic table creation**: `_crump_history` table is created automatically if it doesn't exist
+- **Error tracking**: Failed syncs are still recorded with error details
+- **Data integrity**: File hashes help detect when same data is re-synced
+- **Performance metrics**: Track sync duration for optimization
+- **Schema tracking**: Know when schema changes occurred
+- **No dry-run recording**: History is never recorded during `--dry-run` operations
+
+### Example Workflow
+
+```bash
+# First sync - creates table and records history
+crump sync sales_2024-01-15.csv crump_config.yaml daily_sales --history
+
+# Check history
+psql -d mydb -c "SELECT * FROM _crump_history ORDER BY timestamp DESC LIMIT 1;"
+
+# Second sync - updates data and records new history entry
+crump sync sales_2024-01-16.csv crump_config.yaml daily_sales --history
+
+# View all sync operations
+psql -d mydb -c "SELECT timestamp, filename, rows_upserted, rows_deleted, success FROM _crump_history;"
+```
+
+### Best Practices
+
+- **Enable in production**: Use `--history` for production syncs to maintain audit trail
+- **Disable in development**: Omit `--history` during development to avoid cluttering history
+- **Monitor failures**: Set up alerts for `success = false` entries
+- **Clean up old history**: Periodically archive or delete old history records
+- **Track performance**: Use duration metrics to optimize large syncs
+
 ## Next Steps
 
 - [Configuration Guide](configuration.md) - YAML configuration reference
