@@ -13,6 +13,26 @@ from psycopg import sql
 from crump.config import CrumpJob, apply_row_transformations
 from crump.tabular_file import create_reader
 
+
+def _detect_file_format(file_path: Path) -> str:
+    """Detect file format from extension.
+
+    Args:
+        file_path: Path to the file
+
+    Returns:
+        File format string ('csv' or 'parquet')
+    """
+    suffix = file_path.suffix.lower()
+    if suffix == ".csv":
+        return "csv"
+    elif suffix in [".parquet", ".pq"]:
+        return "parquet"
+    else:
+        # For non-standard extensions (like .cdf used in tests), assume CSV
+        return "csv"
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -1104,7 +1124,9 @@ class DatabaseConnection:
         row_count = 0
         synced_ids: set[tuple] = set()
 
-        with create_reader(csv_path, file_format="csv") as reader:
+        file_format = _detect_file_format(csv_path)
+
+        with create_reader(csv_path, file_format=file_format) as reader:
             # For sampling, we need to know total row count first
             if job.sample_percentage is not None and job.sample_percentage < 100:
                 # Read all rows into memory to get total count and apply sampling
@@ -1157,11 +1179,13 @@ class DatabaseConnection:
             ValueError: If CSV is invalid or columns don't match
         """
         if not csv_path.exists():
-            raise FileNotFoundError(f"CSV file not found: {csv_path}")
+            raise FileNotFoundError(f"File not found: {csv_path}")
 
-        with create_reader(csv_path, file_format="csv") as reader:
+        file_format = _detect_file_format(csv_path)
+
+        with create_reader(csv_path, file_format=file_format) as reader:
             if not reader.fieldnames:
-                raise ValueError("CSV file has no columns")
+                raise ValueError("File has no columns")
             csv_columns = set(reader.fieldnames)
 
         # Validate and determine columns to sync
@@ -1286,8 +1310,9 @@ class DatabaseConnection:
             logger.debug(f"Primary keys for table {job.target_table}: {primary_keys}")
             schema_changed = self._setup_table_schema(job, columns_def, primary_keys)
 
-            # Process CSV rows
-            with create_reader(csv_path, file_format="csv") as reader:
+            # Process rows
+            file_format = _detect_file_format(csv_path)
+            with create_reader(csv_path, file_format=file_format) as reader:
                 rows_synced, synced_ids = self._process_csv_rows(
                     reader, job, sync_columns, primary_keys, filename_values
                 )

@@ -217,7 +217,7 @@ def test_extract_append_header_mismatch(solo_cdf_file: Path, tmp_path: Path) -> 
         writer.writerow([1, 2])
 
     # Try to append with different headers
-    with pytest.raises(ValueError, match="existing CSV has different columns"):
+    with pytest.raises(ValueError, match="existing file has different columns"):
         extract_cdf_to_csv(
             cdf_file_path=solo_cdf_file,
             output_dir=tmp_path,
@@ -592,3 +592,146 @@ def test_extract_cdf_with_config_missing_column(imap_cdf_file: Path, tmp_path: P
 
     # No matching CSV should be produced
     assert len(results) == 0
+
+
+def test_extract_cdf_to_parquet(solo_cdf_file: Path, tmp_path: Path) -> None:
+    """Test extracting CDF file to Parquet format."""
+    from crump.tabular_file import create_reader
+
+    results = extract_cdf_to_csv(
+        cdf_file_path=solo_cdf_file,
+        output_dir=tmp_path,
+        filename_template="[SOURCE_FILE]-[VARIABLE_NAME].parquet",
+        automerge=True,
+        append=False,
+        variable_names=None,
+        max_records=None,
+        use_parquet=True,
+    )
+
+    assert len(results) > 0
+
+    # Verify at least one file is Parquet
+    parquet_files = [r for r in results if r.output_file.suffix == ".parquet"]
+    assert len(parquet_files) > 0
+
+    # Verify we can read the Parquet file
+    parquet_file = parquet_files[0].output_file
+    assert parquet_file.exists()
+
+    with create_reader(parquet_file) as reader:
+        assert len(reader.fieldnames) > 0
+        rows = list(reader)
+        assert len(rows) > 0
+
+
+def test_extract_cdf_to_parquet_specific_variables(solo_cdf_file: Path, tmp_path: Path) -> None:
+    """Test extracting specific variables from CDF to Parquet."""
+    from crump.tabular_file import create_reader
+
+    results = extract_cdf_to_csv(
+        cdf_file_path=solo_cdf_file,
+        output_dir=tmp_path,
+        filename_template="[SOURCE_FILE]-[VARIABLE_NAME].parquet",
+        automerge=False,
+        append=False,
+        variable_names=["EPOCH"],
+        max_records=100,
+        use_parquet=True,
+    )
+
+    assert len(results) == 1
+    assert results[0].output_file.suffix == ".parquet"
+    assert results[0].num_rows == 100
+
+    # Verify Parquet file content
+    with create_reader(results[0].output_file) as reader:
+        assert reader.fieldnames == ["EPOCH"]
+        rows = list(reader)
+        assert len(rows) == 100
+
+
+def test_extract_cdf_to_parquet_with_config(solo_cdf_file: Path, tmp_path: Path) -> None:
+    """Test extracting CDF to Parquet with config-based column mapping."""
+    from crump.config import CrumpConfig
+    from crump.tabular_file import create_reader
+
+    # Create config file
+    config_file = tmp_path / "crump_config.yaml"
+    config_file.write_text("""
+jobs:
+  mag_data:
+    target_table: magnetic_field
+    id_mapping:
+      EPOCH: time_id
+    columns:
+      EPOCH: epoch_time
+""")
+
+    config = CrumpConfig.from_yaml(config_file)
+    job = config.get_job("mag_data")
+    assert job is not None
+
+    # Extract with config using Parquet
+    results = extract_cdf_with_config(
+        cdf_file_path=solo_cdf_file,
+        output_dir=tmp_path,
+        job=job,
+        max_records=50,
+        automerge=True,
+        variable_names=None,
+        append=False,
+        filename_template="[SOURCE_FILE]_transformed.parquet",
+        use_parquet=True,
+    )
+
+    assert len(results) > 0
+
+    # Verify Parquet file with transformed column names
+    parquet_result = results[0]
+    assert parquet_result.output_file.suffix == ".parquet"
+
+    with create_reader(parquet_result.output_file) as reader:
+        # Should have transformed column name
+        assert "epoch_time" in reader.fieldnames
+        rows = list(reader)
+        assert len(rows) > 0
+        assert len(rows) <= 50
+
+
+def test_extract_parquet_append_mode(solo_cdf_file: Path, tmp_path: Path) -> None:
+    """Test extracting CDF to Parquet with append mode."""
+    from crump.tabular_file import create_reader
+
+    # First extraction
+    results1 = extract_cdf_to_csv(
+        cdf_file_path=solo_cdf_file,
+        output_dir=tmp_path,
+        filename_template="[SOURCE_FILE]-[VARIABLE_NAME].parquet",
+        automerge=False,
+        append=False,
+        variable_names=["EPOCH"],
+        max_records=100,
+        use_parquet=True,
+    )
+
+    assert len(results1) == 1
+    original_rows = results1[0].num_rows
+    output_file = results1[0].output_file
+
+    # Second extraction with append
+    extract_cdf_to_csv(
+        cdf_file_path=solo_cdf_file,
+        output_dir=tmp_path,
+        filename_template="[SOURCE_FILE]-[VARIABLE_NAME].parquet",
+        automerge=False,
+        append=True,
+        variable_names=["EPOCH"],
+        max_records=100,
+        use_parquet=True,
+    )
+
+    # File should now have double the rows
+    with create_reader(output_file) as reader:
+        rows = list(reader)
+        assert len(rows) == original_rows * 2
