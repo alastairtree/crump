@@ -14,23 +14,32 @@ from crump.config import CrumpJob, apply_row_transformations
 from crump.tabular_file import create_reader
 
 
-def _detect_file_format(file_path: Path) -> str:
-    """Detect file format from extension.
+def _detect_file_format(file_path: Path) -> Any:
+    """Detect file format from extension for tabular files.
 
     Args:
         file_path: Path to the file
 
     Returns:
-        File format string ('csv' or 'parquet')
+        InputFileType enum value (CSV or PARQUET only, defaults to CSV for unknown extensions)
+
+    Note:
+        This function only detects CSV and Parquet formats since those are the
+        formats supported by the tabular file reader. CDF files are not directly
+        syncable and must be extracted first.
     """
-    suffix = file_path.suffix.lower()
-    if suffix == ".csv":
-        return "csv"
-    elif suffix in [".parquet", ".pq"]:
-        return "parquet"
-    else:
-        # For non-standard extensions (like .cdf used in tests), assume CSV
-        return "csv"
+    from crump.file_types import InputFileType
+
+    try:
+        file_type = InputFileType.from_path(str(file_path))
+        # Only return CSV or PARQUET; treat everything else (including CDF) as CSV
+        if file_type == InputFileType.PARQUET:
+            return InputFileType.PARQUET
+        else:
+            return InputFileType.CSV
+    except ValueError:
+        # Unknown extension, default to CSV
+        return InputFileType.CSV
 
 
 logger = logging.getLogger(__name__)

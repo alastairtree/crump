@@ -165,8 +165,15 @@ def extract(
             raise click.Abort()
 
         # Adjust filename extension if using Parquet
-        if parquet and filename.endswith(".csv"):
-            filename = filename[:-4] + ".parquet"
+        from crump.file_types import OutputFileType
+
+        if parquet:
+            # Replace CSV extension with Parquet extension if present
+            from pathlib import Path as PathLib
+
+            filename_path = PathLib(filename)
+            if filename_path.suffix.lower() in [".csv"]:
+                filename = filename_path.stem + "." + OutputFileType.PARQUET.value
 
         # Mode 1: Config-based extraction (applies column mappings)
         if config is not None:

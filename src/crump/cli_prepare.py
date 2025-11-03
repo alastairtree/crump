@@ -377,10 +377,24 @@ def prepare(file_paths: tuple[Path, ...], config: Path, job: str | None, force: 
     temp_csv_files: list[Path] = []
 
     try:
-        # Separate CSV and CDF files
-        csv_files = [f for f in file_paths if f.suffix.lower() == ".csv"]
-        cdf_files = [f for f in file_paths if f.suffix.lower() == ".cdf"]
-        unsupported_files = [f for f in file_paths if f.suffix.lower() not in [".csv", ".cdf"]]
+        from crump.file_types import InputFileType
+
+        # Separate CSV and CDF files using InputFileType
+        csv_files = []
+        cdf_files = []
+        unsupported_files = []
+
+        for f in file_paths:
+            try:
+                file_type = InputFileType.from_path(str(f))
+                if file_type == InputFileType.CSV:
+                    csv_files.append(f)
+                elif file_type == InputFileType.CDF:
+                    cdf_files.append(f)
+                else:
+                    unsupported_files.append(f)
+            except ValueError:
+                unsupported_files.append(f)
 
         # Warn about unsupported files
         if unsupported_files:
