@@ -1,8 +1,9 @@
 """Type detection for CSV columns."""
 
-import csv
 import re
 from pathlib import Path
+
+from crump.tabular_file import create_reader
 
 
 def detect_column_type(values: list[str]) -> str:
@@ -116,9 +117,7 @@ def analyze_csv_types(csv_path: Path) -> dict[str, str]:
     """
     column_values: dict[str, list[str]] = {}
 
-    with open(csv_path, encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-
+    with create_reader(csv_path) as reader:
         if not reader.fieldnames:
             return {}
 
@@ -148,9 +147,7 @@ def analyze_csv_types_and_nullable(csv_path: Path) -> dict[str, tuple[str, bool]
     column_values: dict[str, list[str]] = {}
     total_rows = 0
 
-    with open(csv_path, encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-
+    with create_reader(csv_path) as reader:
         if not reader.fieldnames:
             return {}
 

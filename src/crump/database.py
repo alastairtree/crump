@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import logging
 import sqlite3
 from pathlib import Path
@@ -12,6 +11,7 @@ import psycopg
 from psycopg import sql
 
 from crump.config import CrumpJob, apply_row_transformations
+from crump.tabular_file import create_reader
 
 logger = logging.getLogger(__name__)
 
@@ -1104,9 +1104,7 @@ class DatabaseConnection:
         row_count = 0
         synced_ids: set[tuple] = set()
 
-        with open(csv_path, encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-
+        with create_reader(csv_path) as reader:
             # For sampling, we need to know total row count first
             if job.sample_percentage is not None and job.sample_percentage < 100:
                 # Read all rows into memory to get total count and apply sampling
@@ -1161,8 +1159,7 @@ class DatabaseConnection:
         if not csv_path.exists():
             raise FileNotFoundError(f"CSV file not found: {csv_path}")
 
-        with open(csv_path, encoding="utf-8") as f:
-            reader = csv.DictReader(f)
+        with create_reader(csv_path) as reader:
             if not reader.fieldnames:
                 raise ValueError("CSV file has no columns")
             csv_columns = set(reader.fieldnames)
@@ -1290,8 +1287,7 @@ class DatabaseConnection:
             schema_changed = self._setup_table_schema(job, columns_def, primary_keys)
 
             # Process CSV rows
-            with open(csv_path, encoding="utf-8") as f:
-                reader = csv.DictReader(f)
+            with create_reader(csv_path) as reader:
                 rows_synced, synced_ids = self._process_csv_rows(
                     reader, job, sync_columns, primary_keys, filename_values
                 )

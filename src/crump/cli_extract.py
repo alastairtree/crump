@@ -39,7 +39,7 @@ def format_file_size(size_bytes: int) -> str:
     "-o",
     type=click.Path(path_type=Path),
     default=None,
-    help="Output directory for CSV files (default: current directory)",
+    help="Output directory for output files (default: current directory)",
 )
 @click.option(
     "--filename",
@@ -50,13 +50,13 @@ def format_file_size(size_bytes: int) -> str:
 @click.option(
     "--automerge/--no-automerge",
     default=True,
-    help="Merge variables with the same record count into a single CSV (default: enabled)",
+    help="Merge variables with the same record count into a single file (default: enabled)",
 )
 @click.option(
     "--append",
     is_flag=True,
     default=False,
-    help="Append to existing CSV files instead of overwriting (default: disabled)",
+    help="Append to existing files instead of overwriting (default: disabled)",
 )
 @click.option(
     "--variables",
@@ -84,6 +84,12 @@ def format_file_size(size_bytes: int) -> str:
     default=None,
     help="Job name from config file (optional - auto-detected if config contains only one job).",
 )
+@click.option(
+    "--parquet",
+    is_flag=True,
+    default=False,
+    help="Output to Parquet format instead of CSV (default: disabled)",
+)
 def extract(
     files: tuple[Path, ...],
     output_path: Path | None,
@@ -94,14 +100,15 @@ def extract(
     max_records: int | None,
     config: Path | None,
     job: str | None,
+    parquet: bool,
 ) -> None:
-    """Extract data from CDF files to CSV format.
+    """Extract data from CDF files to CSV or Parquet format.
 
-    Reads CDF science data files and extracts variable data into CSV files.
+    Reads CDF science data files and extracts variable data into CSV or Parquet files.
     Variables with array data are expanded into multiple columns with sensible names.
 
     When using --config and --job, the extract command applies the same column mappings
-    and transformations that would be used by the sync command, but outputs to CSV
+    and transformations that would be used by the sync command, but outputs to CSV/Parquet
     instead of a database.
 
     Arguments:
@@ -144,6 +151,12 @@ def extract(
 
         # Extract with config, specific variables, and custom filename
         crump extract data.cdf --config crump_config.yaml -v epoch -v vectors --filename "vectors_[SOURCE_FILE].csv"
+
+        # Extract to Parquet format instead of CSV
+        crump extract data.cdf --parquet
+
+        # Extract to Parquet with config
+        crump extract data.cdf --config crump_config.yaml --parquet
     """
     try:
         # Validate config/job parameters
@@ -151,14 +164,29 @@ def extract(
             console.print("[red]Error:[/red] --job requires --config to be specified.")
             raise click.Abort()
 
+        # Adjust filename extension if using Parquet
+        if parquet and filename.endswith(".csv"):
+            filename = filename[:-4] + ".parquet"
+
         # Mode 1: Config-based extraction (applies column mappings)
         if config is not None:
             return _extract_with_config(
-                files, output_path, config, job, max_records, automerge, variables, append, filename
+                files,
+                output_path,
+                config,
+                job,
+                max_records,
+                automerge,
+                variables,
+                append,
+                filename,
+                parquet,
             )
 
         # Mode 2: Raw extraction (current behavior)
-        return _extract_raw(files, output_path, filename, automerge, append, variables, max_records)
+        return _extract_raw(
+            files, output_path, filename, automerge, append, variables, max_records, parquet
+        )
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
@@ -175,12 +203,13 @@ def _extract_with_config(
     variables: tuple[str, ...],
     append: bool,
     filename: str,
+    parquet: bool,
 ) -> None:
     """Extract CDF files using config-based column mapping.
 
     Args:
         files: CDF files to extract
-        output_path: Output directory for CSV files
+        output_path: Output directory for output files
         config_path: Path to YAML config file
         job_name: Job name from config (None to auto-detect if single job)
         max_records: Maximum records to extract
@@ -188,6 +217,7 @@ def _extract_with_config(
         variables: Specific variable names to extract
         append: Whether to append to existing files
         filename: Filename template for output files
+        parquet: Whether to output Parquet format instead of CSV
     """
     # Load configuration
     crump_config = CrumpConfig.from_yaml(config_path)
@@ -224,15 +254,22 @@ def _extract_with_config(
     # Convert variables tuple to list (None if empty)
     variable_list = list(variables) if variables else None
 
-    console.print(f"[cyan]Extracting {len(files)} CDF file(s) with config-based mapping...[/cyan]")
+    file_format = "Parquet" if parquet else "CSV"
+    console.print(
+        f"[cyan]Extracting {len(files)} CDF file(s) to {file_format} with config-based mapping...[/cyan]"
+    )
     console.print(f"[dim]  Config: {config_path.name}[/dim]")
     console.print(f"[dim]  Job: {job_name}[/dim]")
     console.print(f"[dim]  Output directory: {output_dir}[/dim]")
+    console.print(f"[dim]  Format: {file_format}[/dim]")
     if variable_list:
         console.print(f"[dim]  Variables: {', '.join(variable_list)}[/dim]")
     console.print(f"[dim]  Auto-merge: {automerge}[/dim]")
     console.print(f"[dim]  Append mode: {append}[/dim]")
-    if filename != "[SOURCE_FILE]-[VARIABLE_NAME].csv":
+    default_filename = (
+        "[SOURCE_FILE]-[VARIABLE_NAME].parquet" if parquet else "[SOURCE_FILE]-[VARIABLE_NAME].csv"
+    )
+    if filename != default_filename:
         console.print(f"[dim]  Filename template: {filename}[/dim]")
     if max_records is not None:
         console.print(f"[dim]  Max records: {max_records:,}[/dim]")
@@ -254,15 +291,16 @@ def _extract_with_config(
                 variable_names=variable_list,
                 append=append,
                 filename_template=filename,
+                use_parquet=parquet,
             )
 
             if not results:
                 console.print(
-                    "[yellow]  No matching data found - column mappings don't match any extracted CSV[/yellow]\n"
+                    "[yellow]  No matching data found - column mappings don't match any extracted data[/yellow]\n"
                 )
                 continue
 
-            # Display results for each transformed CSV
+            # Display results for each transformed file
             table = Table(show_header=True, box=None, padding=(0, 1))
             table.add_column("Output File", style="cyan")
             table.add_column("Variables", style="yellow")
@@ -298,7 +336,7 @@ def _extract_with_config(
 
     # Final summary
     console.print(f"[bold green]{CHECKMARK} Extraction complete[/bold green]")
-    console.print(f"[dim]  Created {total_files_created} CSV file(s)[/dim]")
+    console.print(f"[dim]  Created {total_files_created} {file_format} file(s)[/dim]")
     console.print(f"[dim]  Total rows extracted: {total_rows:,}[/dim]")
     console.print(f"[dim]  Output directory: {output_dir.absolute()}[/dim]")
 
@@ -311,17 +349,19 @@ def _extract_raw(
     append: bool,
     variables: tuple[str, ...],
     max_records: int | None,
+    parquet: bool,
 ) -> None:
     """Extract CDF files with raw dump (original behavior).
 
     Args:
         files: CDF files to extract
-        output_path: Output directory for CSV files
+        output_path: Output directory for output files
         filename: Filename template
         automerge: Whether to merge variables
         append: Whether to append to existing files
         variables: Specific variables to extract
         max_records: Maximum records to extract
+        parquet: Whether to output Parquet format instead of CSV
     """
     try:
         # Determine output directory
@@ -330,10 +370,14 @@ def _extract_raw(
         # Convert variables tuple to list (None if empty)
         variable_list = list(variables) if variables else None
 
-        console.print(f"[cyan]Extracting data from {len(files)} CDF file(s)...[/cyan]")
+        file_format = "Parquet" if parquet else "CSV"
+        console.print(
+            f"[cyan]Extracting data from {len(files)} CDF file(s) to {file_format}...[/cyan]"
+        )
         if variable_list:
             console.print(f"[dim]  Extracting variables: {', '.join(variable_list)}[/dim]")
         console.print(f"[dim]  Output directory: {output_dir}[/dim]")
+        console.print(f"[dim]  Format: {file_format}[/dim]")
         console.print(f"[dim]  Auto-merge: {automerge}[/dim]")
         console.print(f"[dim]  Append mode: {append}[/dim]")
         if max_records is not None:
@@ -355,6 +399,7 @@ def _extract_raw(
                     append=append,
                     variable_names=variable_list,
                     max_records=max_records,
+                    use_parquet=parquet,
                 )
 
                 if not results:
@@ -399,7 +444,7 @@ def _extract_raw(
 
         # Final summary
         console.print(f"[bold green]{CHECKMARK} Extraction complete[/bold green]")
-        console.print(f"[dim]  Created/updated {total_files_created} CSV file(s)[/dim]")
+        console.print(f"[dim]  Created/updated {total_files_created} {file_format} file(s)[/dim]")
         console.print(f"[dim]  Total rows extracted: {total_rows:,}[/dim]")
         console.print(f"[dim]  Output directory: {output_dir.absolute()}[/dim]")
 
