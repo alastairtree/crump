@@ -162,20 +162,24 @@ def _get_unique_filename(base_filename: str, used_filenames: set[str]) -> str:
         counter += 1
 
 
-def _validate_existing_csv_header(csv_path: Path, expected_columns: list[str]) -> bool:
-    """Validate that an existing CSV has the expected header.
+def _validate_existing_file_header(
+    file_path: Path, expected_columns: list[str], file_format: str
+) -> bool:
+    """Validate that an existing CSV or Parquet file has the expected header.
 
     Args:
-        csv_path: Path to the CSV file
+        file_path: Path to the file
         expected_columns: Expected column names
+        file_format: File format ('csv' or 'parquet')
 
     Returns:
         True if headers match, False otherwise
     """
     try:
-        with open(csv_path, encoding="utf-8") as f:
-            reader = csv.reader(f)
-            existing_header = next(reader, None)
+        from crump.tabular_file import create_reader
+
+        with create_reader(file_path, file_format=file_format) as reader:
+            existing_header = reader.fieldnames
             return existing_header == expected_columns
     except Exception:
         return False
@@ -289,21 +293,23 @@ def extract_cdf_to_csv(
                     "Use --append to add data to existing file."
                 )
 
+            # Determine file format
+            file_format = "parquet" if use_parquet else "csv"
+
             # Validate header if appending
             if (
                 append
                 and output_path.exists()
-                and not _validate_existing_csv_header(output_path, all_column_names)
+                and not _validate_existing_file_header(output_path, all_column_names, file_format)
             ):
                 raise ValueError(
                     f"Cannot append to {output_path}: "
-                    f"existing CSV has different columns. "
+                    f"existing file has different columns. "
                     f"Expected columns: {', '.join(all_column_names)}"
                 )
 
             # Write to file using tabular writer
             write_append = append and output_path.exists()
-            file_format = "parquet" if use_parquet else "csv"
 
             with create_writer(output_path, file_format=file_format, append=write_append) as writer:
                 # Write header only if not appending
@@ -353,21 +359,23 @@ def extract_cdf_to_csv(
                     "Use --append to add data to existing file."
                 )
 
+            # Determine file format
+            file_format = "parquet" if use_parquet else "csv"
+
             # Validate header if appending
             if (
                 append
                 and output_path.exists()
-                and not _validate_existing_csv_header(output_path, col_names)
+                and not _validate_existing_file_header(output_path, col_names, file_format)
             ):
                 raise ValueError(
                     f"Cannot append to {output_path}: "
-                    f"existing CSV has different columns. "
+                    f"existing file has different columns. "
                     f"Expected columns: {', '.join(col_names)}"
                 )
 
             # Write to file using tabular writer
             write_append = append and output_path.exists()
-            file_format = "parquet" if use_parquet else "csv"
 
             with create_writer(output_path, file_format=file_format, append=write_append) as writer:
                 # Write header only if not appending
@@ -609,18 +617,18 @@ def _transform_csv_with_config(
         # Process rows and write output CSV
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Determine file format
+        file_format = "parquet" if use_parquet else "csv"
+
         # Check if we're appending and validate headers
         if append and output_path.exists():
             # Validate that existing file has same columns
-            with open(output_path, encoding="utf-8") as existing_f:
-                existing_reader = csv.DictReader(existing_f)
-                existing_cols = existing_reader.fieldnames or []
-                if existing_cols != output_columns:
-                    raise ValueError(
-                        f"Cannot append to {output_path.name}: "
-                        f"existing CSV has different columns. "
-                        f"Expected: {output_columns}, Found: {existing_cols}"
-                    )
+            if not _validate_existing_file_header(output_path, output_columns, file_format):
+                raise ValueError(
+                    f"Cannot append to {output_path.name}: "
+                    f"existing file has different columns. "
+                    f"Expected: {output_columns}"
+                )
         elif not append and output_path.exists():
             # File exists and we're not appending - error
             raise FileExistsError(
@@ -636,7 +644,6 @@ def _transform_csv_with_config(
 
         # Write using tabular file writer
         write_append = append and output_path.exists()
-        file_format = "parquet" if use_parquet else "csv"
         with create_writer(output_path, file_format=file_format, append=write_append) as writer:
             # Write header only if not appending
             if not write_append:

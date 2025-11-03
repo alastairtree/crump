@@ -1,6 +1,6 @@
 # CRUMP
 
-Read and dump CSV and CDF science files into PostgreSQL or SQLite databases in batched files using easy to edit configuration files. Avoid writing code to examine and transform data files onto database tables, just tweak the automaticly generated crump-config.yaml file and sync all your data files into you database.
+Read and dump CSV, Parquet, and CDF science files into PostgreSQL or SQLite databases in batched files using easy to edit configuration files. Avoid writing code to examine and transform data files onto database tables, just tweak the automaticly generated crump-config.yaml file and sync all your data files into you database.
 
 [![CI](https://github.com/alastairtree/clauddemo/workflows/CI/badge.svg)](https://github.com/alastairtree/clauddemo/actions)
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
@@ -8,7 +8,7 @@ Read and dump CSV and CDF science files into PostgreSQL or SQLite databases in b
 
 ## Overview
 
-**crump** is a command-line tool and Python library for easy syncing CSV and CDF (Common Data Format) files to a database (PostgreSQL or SQLite). It provides a declarative, configuration-based approach to data synchronization with some additional features that make it very fast to get up and running syncing big complex data files into a db quickly.
+**crump** is a command-line tool and Python library for easy syncing CSV, Parquet, and CDF (Common Data Format) files to a database (PostgreSQL or SQLite). It provides a declarative, configuration-based approach to data synchronization with some additional features that make it very fast to get up and running syncing big complex data files into a db quickly.
 
 ## Quick Start
 
@@ -32,6 +32,19 @@ crump sync users.csv crump_config.yaml users_sync --dry-run
 crump sync users.csv crump_config.yaml users_sync
 ```
 
+### Parquet Files
+
+```bash
+# Inspect Parquet file
+crump inspect data.parquet --max-records 10
+
+# Sync Parquet file to database
+crump sync data.parquet crump_config.yaml --db-url postgresql://localhost/mydb
+
+# Extract CDF to Parquet format
+crump extract data.cdf --parquet --output-path ./output
+```
+
 ### CDF (Science Data) Files
 
 ```bash
@@ -40,6 +53,9 @@ crump inspect data.cdf --max-records 10
 
 # Extract CDF to CSV (optional, for preview)
 crump extract data.cdf --output-path ./output --max-records 100
+
+# Extract CDF to Parquet format
+crump extract data.cdf --parquet --output-path ./output
 
 # Create configuration from CDF file
 crump prepare data.cdf --config crump_config.yaml
@@ -50,10 +66,11 @@ crump sync data.cdf crump_config.yaml vectors --db-url postgresql://localhost/my
 
 ## Key Features
 
-- **CSV & CDF Support**: Work with both CSV files and NASA CDF (Common Data Format) science data files
+- **CSV, Parquet & CDF Support**: Work with CSV files, Apache Parquet files, and NASA CDF (Common Data Format) science data files
 - **Direct CDF Sync**: Sync CDF files directly to database without manual extraction
+- **Parquet Format**: Extract CDF data to efficient columnar Parquet format with `--parquet` flag
 - **Configuration-Based**: Define sync jobs in YAML
-- **Column Mapping**: Rename columns between CSV and database
+- **Column Mapping**: Rename columns between files and database
 - **Filename Extraction**: Extract values from filenames (dates, versions, etc.)
 - **Automatic Cleanup**: Delete stale records based on extracted values
 - **Compound Primary Keys**: Support for multi-column primary keys

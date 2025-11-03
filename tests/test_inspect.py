@@ -195,3 +195,105 @@ class TestInspectCDFFiles:
         if lbl_index is not None:
             # EPOCH (1440 records) should appear before LBL1_B_RTN (3 records)
             assert epoch_index < lbl_index
+
+
+class TestInspectParquetFiles:
+    """Test suite for inspecting Parquet files."""
+
+    def test_inspect_parquet_file(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test inspect with a Parquet file."""
+        from crump.tabular_file import create_writer
+
+        # Create a test Parquet file
+        parquet_file = tmp_path / "test.parquet"
+        with create_writer(parquet_file) as writer:
+            writer.writerow(["id", "name", "age"])
+            writer.writerow([1, "Alice", 30])
+            writer.writerow([2, "Bob", 25])
+            writer.writerow([3, "Carol", 35])
+
+        result = cli_runner.invoke(main, ["inspect", str(parquet_file)])
+        assert result.exit_code == 0
+        assert "Parquet File: test.parquet" in result.output
+        assert "Columns (3):" in result.output
+        assert "id, name, age" in result.output
+        assert "Alice" in result.output
+        assert "3 rows total, 3 columns" in result.output
+
+    def test_inspect_parquet_with_custom_records(
+        self, cli_runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Test inspect Parquet with custom record count."""
+        from crump.tabular_file import create_writer
+
+        parquet_file = tmp_path / "test.parquet"
+        with create_writer(parquet_file) as writer:
+            writer.writerow(["id", "value"])
+            for i in range(1, 11):
+                writer.writerow([i, i * 10])
+
+        result = cli_runner.invoke(main, ["inspect", str(parquet_file), "--max-records", "3"])
+        assert result.exit_code == 0
+        assert "Sample Records" in result.output
+        assert "first 3" in result.output
+        # Should only show first 3 records in the sample
+        assert "10 rows total" in result.output
+
+    def test_inspect_parquet_empty(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test inspect with empty Parquet file."""
+        from crump.tabular_file import create_writer
+
+        parquet_file = tmp_path / "empty.parquet"
+        with create_writer(parquet_file) as writer:
+            writer.writerow(["col1", "col2", "col3"])
+            # No data rows
+
+        result = cli_runner.invoke(main, ["inspect", str(parquet_file)])
+        assert result.exit_code == 0
+        assert "Parquet File: empty.parquet" in result.output
+        assert "Columns (3):" in result.output
+        assert "0 rows total" in result.output
+
+    def test_inspect_multiple_parquet_files(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test inspecting multiple Parquet files."""
+        from crump.tabular_file import create_writer
+
+        # Create first Parquet file
+        file1 = tmp_path / "file1.parquet"
+        with create_writer(file1) as writer:
+            writer.writerow(["a", "b"])
+            writer.writerow([1, 2])
+
+        # Create second Parquet file
+        file2 = tmp_path / "file2.parquet"
+        with create_writer(file2) as writer:
+            writer.writerow(["x", "y", "z"])
+            writer.writerow([10, 20, 30])
+            writer.writerow([40, 50, 60])
+
+        result = cli_runner.invoke(main, ["inspect", str(file1), str(file2)])
+        assert result.exit_code == 0
+        assert "file1.parquet" in result.output
+        assert "file2.parquet" in result.output
+        assert "1 rows total" in result.output
+        assert "2 rows total" in result.output
+
+    def test_inspect_mixed_csv_and_parquet(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test inspecting both CSV and Parquet files together."""
+        from crump.tabular_file import create_writer
+
+        # Create CSV file
+        csv_file = tmp_path / "data.csv"
+        csv_file.write_text("id,name\n1,Alice\n2,Bob\n")
+
+        # Create Parquet file
+        parquet_file = tmp_path / "data.parquet"
+        with create_writer(parquet_file) as writer:
+            writer.writerow(["x", "y"])
+            writer.writerow([10, 20])
+
+        result = cli_runner.invoke(main, ["inspect", str(csv_file), str(parquet_file)])
+        assert result.exit_code == 0
+        assert "CSV File: data.csv" in result.output
+        assert "Parquet File: data.parquet" in result.output
+        assert "Alice" in result.output

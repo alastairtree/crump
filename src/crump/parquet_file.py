@@ -127,6 +127,9 @@ class ParquetFileWriter(TabularFileWriter):
         # If appending and file exists, read the existing data
         if self.append and self.file_path.exists():
             self._existing_table = pq.read_table(str(self.file_path))
+            # When appending, we already have a header from the existing file
+            # Set it so that subsequent writerow() calls are treated as data
+            self._header = self._existing_table.schema.names
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
@@ -137,8 +140,9 @@ class ParquetFileWriter(TabularFileWriter):
             exc_val: Exception value if an error occurred
             exc_tb: Exception traceback if an error occurred
         """
-        # Only write if no exception occurred and we have data
-        if exc_type is None and self._rows:
+        # Only write if no exception occurred and we have a header
+        # (we write even if there are no data rows, to create an empty table with schema)
+        if exc_type is None and self._header is not None:
             self._write_parquet()
 
         # Cleanup
@@ -152,12 +156,25 @@ class ParquetFileWriter(TabularFileWriter):
         The first row is treated as the header (column names).
         Subsequent rows are treated as data.
 
+        When appending, if the first row matches the existing header,
+        it is validated and skipped.
+
         Args:
             row: List of values to write
         """
         if self._header is None:
-            # First row is the header
+            # First row is the header (when creating new file)
             self._header = row
+        elif self._existing_table is not None and len(self._rows) == 0:
+            # When appending, the first data row might be a header row
+            # If it matches the existing header, skip it (validation happens in _write_parquet)
+            # If it doesn't match, treat it as data
+            if row == self._header:
+                # Header matches, skip it
+                return
+            else:
+                # Not a header, treat as data
+                self._rows.append(row)
         else:
             # Subsequent rows are data
             self._rows.append(row)
@@ -170,6 +187,23 @@ class ParquetFileWriter(TabularFileWriter):
         if not self._header:
             raise ValueError("Cannot write Parquet file without header row")
 
+        # If appending, use the existing table's schema for type compatibility
+        if self._existing_table is not None:
+            # Verify column names match
+            if self._existing_table.schema.names != self._header:
+                raise ValueError(
+                    f"Cannot append to {self.file_path}: "
+                    f"column names don't match. "
+                    f"Existing: {self._existing_table.schema.names}, "
+                    f"New: {self._header}"
+                )
+
+            # Use existing schema for new data
+            schema = self._existing_table.schema
+        else:
+            # No existing schema, let PyArrow infer from data
+            schema = None
+
         # Convert rows to PyArrow Table
         if self._rows:
             # Create a dictionary of column_name -> list_of_values
@@ -178,24 +212,19 @@ class ParquetFileWriter(TabularFileWriter):
                 for col, value in zip(self._header, row, strict=False):
                     data[col].append(value)
 
-            # Create PyArrow Table from dictionary
-            new_table = pa.Table.from_pydict(data)
+            # Create PyArrow Table from dictionary with schema
+            if schema is not None:
+                new_table = pa.Table.from_pydict(data, schema=schema)
+            else:
+                new_table = pa.Table.from_pydict(data)
         else:
             # No data rows, create empty table with schema
-            schema = pa.schema([(col, pa.string()) for col in self._header])
+            if schema is None:
+                schema = pa.schema([(col, pa.string()) for col in self._header])
             new_table = pa.Table.from_pydict({col: [] for col in self._header}, schema=schema)
 
         # If appending, combine with existing table
         if self._existing_table is not None:
-            # Verify schemas match
-            if self._existing_table.schema.names != new_table.schema.names:
-                raise ValueError(
-                    f"Cannot append to {self.file_path}: "
-                    f"column names don't match. "
-                    f"Existing: {self._existing_table.schema.names}, "
-                    f"New: {new_table.schema.names}"
-                )
-
             # Combine tables
             combined_table = pa.concat_tables([self._existing_table, new_table])
             pq.write_table(combined_table, str(self.file_path))
