@@ -118,6 +118,11 @@ class TestSuggestIdColumn:
         # No custom matchers, should use default logic including _id suffix
         assert suggest_id_column(columns) == "user_id"
 
+    def test_default_matchers_handle_science_files(self) -> None:
+        columns = ["val_x", "thing_y", "epoch"]
+        # No custom matchers, should use default logic including _id suffix
+        assert suggest_id_column(columns) == "epoch"
+
 
 class TestAnalyzeCsvTypes:
     """Test suite for analyze_csv_types function."""

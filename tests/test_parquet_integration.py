@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from crump.config import CrumpConfig
-from crump.database import sync_tabular_file_to_db
+from crump.database import sync_file_to_db
 from crump.tabular_file import create_writer
 from tests.db_test_utils import execute_query, get_table_columns
 
@@ -39,7 +39,7 @@ jobs:
         assert job is not None
 
         # Sync Parquet file
-        rows_synced = sync_tabular_file_to_db(parquet_file, job, db_url)
+        rows_synced = sync_file_to_db(parquet_file, job, db_url)
         assert rows_synced == 3
 
         # Verify data in database
@@ -80,7 +80,7 @@ jobs:
         assert job is not None
 
         # Sync
-        rows_synced = sync_tabular_file_to_db(parquet_file, job, db_url)
+        rows_synced = sync_file_to_db(parquet_file, job, db_url)
         assert rows_synced == 3
 
         # Verify data
@@ -115,11 +115,11 @@ jobs:
         assert job is not None
 
         # First sync
-        rows_synced_1 = sync_tabular_file_to_db(parquet_file, job, db_url)
+        rows_synced_1 = sync_file_to_db(parquet_file, job, db_url)
         assert rows_synced_1 == 2
 
         # Second sync (idempotency test)
-        rows_synced_2 = sync_tabular_file_to_db(parquet_file, job, db_url)
+        rows_synced_2 = sync_file_to_db(parquet_file, job, db_url)
         assert rows_synced_2 == 2
 
         # Verify no duplicates
@@ -152,7 +152,7 @@ jobs:
         assert job is not None
 
         # First sync
-        rows_synced = sync_tabular_file_to_db(parquet_file, job, db_url)
+        rows_synced = sync_file_to_db(parquet_file, job, db_url)
         assert rows_synced == 2
 
         # Verify initial data
@@ -170,7 +170,7 @@ jobs:
             writer.writerow(["SKU003", 100])  # New
 
         # Sync updated file
-        rows_synced_2 = sync_tabular_file_to_db(parquet_file_2, job, db_url)
+        rows_synced_2 = sync_file_to_db(parquet_file_2, job, db_url)
         assert rows_synced_2 == 3
 
         # Verify updated data

@@ -186,7 +186,7 @@ def suggest_id_column(columns: list[str], matchers: list[str] | None = None) -> 
         Name of suggested ID column
     """
     # Use provided matchers or default ones
-    id_candidates = ["id", "uuid", "key", "code"] if matchers is None else matchers
+    id_candidates = ["id", "uuid", "epoch", "key", "code"] if matchers is None else matchers
 
     # Check for exact matches
     lower_columns = {col.lower(): col for col in columns}

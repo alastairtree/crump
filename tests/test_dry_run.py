@@ -11,7 +11,7 @@ from crump.config import (
     Index,
     IndexColumn,
 )
-from crump.database import DatabaseConnection, sync_tabular_file_to_db_dry_run
+from crump.database import DatabaseConnection, sync_file_to_db_dry_run
 
 from .db_test_utils import table_exists
 
@@ -44,7 +44,7 @@ def test_dry_run_summary_new_table(db_url: str, tmp_path: Path) -> None:
     )
 
     # Run dry-run
-    summary = sync_tabular_file_to_db_dry_run(csv_file, job, db_url)
+    summary = sync_file_to_db_dry_run(csv_file, job, db_url)
 
     # Verify summary
     assert summary.table_name == "users"
@@ -88,7 +88,7 @@ def test_dry_run_summary_existing_table_no_changes(db_url: str, tmp_path: Path) 
         db.sync_tabular_file(csv_file, job)
 
     # Now run dry-run with same schema
-    summary = sync_tabular_file_to_db_dry_run(csv_file, job, db_url)
+    summary = sync_file_to_db_dry_run(csv_file, job, db_url)
 
     # Verify summary
     assert summary.table_name == "products"
@@ -144,7 +144,7 @@ def test_dry_run_summary_new_columns(db_url: str, tmp_path: Path) -> None:
     )
 
     # Run dry-run
-    summary = sync_tabular_file_to_db_dry_run(csv_file2, job2, db_url)
+    summary = sync_file_to_db_dry_run(csv_file2, job2, db_url)
 
     # Verify summary
     assert summary.table_name == "orders"
@@ -205,7 +205,7 @@ def test_new_column_updates_all_rows(db_url: str, tmp_path: Path) -> None:
     )
 
     # Run dry-run first
-    summary = sync_tabular_file_to_db_dry_run(csv_file2, job_v2, db_url)
+    summary = sync_file_to_db_dry_run(csv_file2, job_v2, db_url)
 
     # Verify dry-run detected the new column
     assert summary.table_exists
@@ -266,7 +266,7 @@ def test_dry_run_summary_new_indexes(db_url: str, tmp_path: Path) -> None:
     )
 
     # Run dry-run
-    summary = sync_tabular_file_to_db_dry_run(csv_file, job_with_indexes, db_url)
+    summary = sync_file_to_db_dry_run(csv_file, job_with_indexes, db_url)
 
     # Verify summary
     assert summary.table_name == "users"
@@ -319,7 +319,7 @@ def test_dry_run_with_date_mapping_and_stale_records(db_url: str, tmp_path: Path
 
     # Run dry-run
     filename_values2 = job.filename_to_column.extract_values_from_filename(csv_file2)
-    summary = sync_tabular_file_to_db_dry_run(csv_file2, job, db_url, filename_values2)
+    summary = sync_file_to_db_dry_run(csv_file2, job, db_url, filename_values2)
 
     # Verify summary
     assert summary.table_name == "sales"
@@ -351,7 +351,7 @@ def test_dry_run_with_compound_primary_key(db_url: str, tmp_path: Path) -> None:
     )
 
     # Run dry-run
-    summary = sync_tabular_file_to_db_dry_run(csv_file, job, db_url)
+    summary = sync_file_to_db_dry_run(csv_file, job, db_url)
 
     # Verify summary
     assert summary.table_name == "inventory"
@@ -468,9 +468,7 @@ def test_dry_run_compound_key_with_date_mapping_matches_sync(db_url: str, tmp_pa
     filename_values = job.filename_to_column.extract_values_from_filename(csv_file1)
 
     # Run dry-run BEFORE actual sync
-    dry_run_summary_initial = sync_tabular_file_to_db_dry_run(
-        csv_file1, job, db_url, filename_values
-    )
+    dry_run_summary_initial = sync_file_to_db_dry_run(csv_file1, job, db_url, filename_values)
 
     # Perform actual sync and capture results
     with DatabaseConnection(db_url) as db:
@@ -542,9 +540,7 @@ def test_dry_run_compound_key_with_date_mapping_matches_sync(db_url: str, tmp_pa
     filename_values2 = job.filename_to_column.extract_values_from_filename(csv_file2)
 
     # Run dry-run BEFORE actual sync
-    dry_run_summary_update = sync_tabular_file_to_db_dry_run(
-        csv_file2, job, db_url, filename_values2
-    )
+    dry_run_summary_update = sync_file_to_db_dry_run(csv_file2, job, db_url, filename_values2)
 
     # Perform actual sync
     with DatabaseConnection(db_url) as db:

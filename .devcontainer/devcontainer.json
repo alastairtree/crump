@@ -2,10 +2,8 @@
   "name": "crump Development",
   "image": "mcr.microsoft.com/devcontainers/python:3.14",
 
-  "features": {
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {
-      "version": "latest",
-      "dockerDashComposeVersion": "v2",
+ "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
       "moby": false
     }
   },

@@ -1375,7 +1375,7 @@ class DatabaseConnection:
                     logger.warning(f"Failed to record sync history: {hist_error}")
 
 
-def sync_tabular_file_to_db(
+def sync_file_to_db(
     file_path: Path,
     job: CrumpJob,
     db_connection_string: str,
@@ -1398,7 +1398,7 @@ def sync_tabular_file_to_db(
         return db.sync_tabular_file(file_path, job, filename_values, enable_history)
 
 
-def sync_tabular_file_to_db_dry_run(
+def sync_file_to_db_dry_run(
     file_path: Path,
     job: CrumpJob,
     db_connection_string: str,

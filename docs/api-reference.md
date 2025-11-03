@@ -21,14 +21,14 @@ pip install crump
 
 ```python
 from pathlib import Path
-from crump import sync_tabular_file_to_db, CrumpConfig
+from crump import sync_file_to_db, CrumpConfig
 
 # Load configuration
 config = CrumpConfig.from_yaml(Path("crump_config.yaml"))
 job = config.get_job("my_job")
 
 # Sync a tabular file (CSV or Parquet)
-rows_synced = sync_tabular_file_to_db(
+rows_synced = sync_file_to_db(
     file_path=Path("users.parquet"),
     job=job,
     db_connection_string="sqlite:///test.db"
@@ -38,14 +38,14 @@ print(f"Synced {rows_synced} rows")
 
 ## Core Functions
 
-### sync_tabular_file_to_db
+### sync_file_to_db
 
 Sync a tabular file (CSV or Parquet) to a database (PostgreSQL or SQLite).
 
 File format is automatically detected from the file extension.
 
 ```python
-def sync_tabular_file_to_db(
+def sync_file_to_db(
     file_path: Path,
     job: CrumpJob,
     db_connection_string: str,
@@ -75,23 +75,24 @@ def sync_tabular_file_to_db(
 
 ```python
 from pathlib import Path
-from crump import sync_tabular_file_to_db, CrumpConfig
+from crump import sync_file_to_db, CrumpConfig
 
 config = CrumpConfig.from_yaml(Path("crump_config.yaml"))
 job = config.get_job("users_sync")
 
 # Sync CSV file
-rows = sync_tabular_file_to_db(
+rows = sync_file_to_db(
     file_path=Path("users.csv"),
     job=job,
-    db_connection_string="postgresql://localhost/mydb"
+    db_connection_string="sqlite:///test.db"
+    # OR db_connection_string="postgresql://localhost:5432/mydb"
 )
 
 # Sync Parquet file (format auto-detected from extension)
-rows = sync_tabular_file_to_db(
+rows = sync_file_to_db(
     file_path=Path("users.csv"),
     crump_job=job,
-    db_url="sqlite:///test.db"
+    db_connection_string="sqlite:///test.db"
 )
 
 # With filename extraction
@@ -99,7 +100,7 @@ filename_values = {"date": "2024-01-15"}
 rows = sync_csv_to_db(
     file_path=Path("users.csv"),
     crump_job=job,
-    db_url="sqlite:///test.db",
+    db_connection_string="sqlite:///test.db",
     filename_values=filename_values
 )
 ```
@@ -112,7 +113,7 @@ Preview sync without making database changes.
 def sync_csv_to_db_dry_run(
     file_path: Path,
     crump_job: CrumpJob,
-    db_url: str,
+    db_connection_string: str,
     filename_values: dict[str, str] | None = None
 ) -> DryRunSummary
 ```
@@ -142,7 +143,7 @@ job = config.get_job("my_job")
 summary = sync_csv_to_db_dry_run(
     file_path=Path("users.csv"),
     crump_job=job,
-    db_url="sqlite:///test.db"
+    db_connection_string="sqlite:///test.db"
 )
 
 print(f"Table exists: {summary.table_exists}")
@@ -509,7 +510,7 @@ filename_values = job.filename_to_column.extract_values_from_filename(csv_path)
 summary = sync_csv_to_db_dry_run(
     file_path=csv_path,
     crump_job=job,
-    db_url="sqlite:///test.db",
+    db_connection_string="sqlite:///test.db",
     filename_values=filename_values
 )
 
@@ -523,7 +524,7 @@ if input("Proceed with sync? (y/n): ").lower() == "y":
     rows = sync_csv_to_db(
         file_path=csv_path,
         crump_job=job,
-        db_url="sqlite:///test.db",
+        db_connection_string="sqlite:///test.db",
         filename_values=filename_values
     )
     print(f"\nSynced {rows} rows successfully!")
@@ -546,7 +547,7 @@ try:
     rows = sync_csv_to_db(
         file_path=Path("users.csv"),
         crump_job=job,
-        db_url="sqlite:///test.db"
+        db_connection_string="sqlite:///test.db"
     )
     print(f"Success: {rows} rows synced")
 
@@ -571,7 +572,7 @@ def sync_data(csv_file: Path, job: CrumpJob) -> None:
     rows: int = sync_csv_to_db(
         file_path=csv_file,
         crump_job=job,
-        db_url="sqlite:///test.db"
+        db_connection_string="sqlite:///test.db"
     )
     # rows is guaranteed to be int
     print(f"Synced {rows} rows")
