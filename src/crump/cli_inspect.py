@@ -58,6 +58,18 @@ def inspect_tabular(file_path: Path, num_records: int) -> None:
         raise click.ClickException(f"Cannot access file: {e}") from e
 
     try:
+        # Get total row count efficiently for Parquet files
+        total_rows = None
+        if file_type == "Parquet":
+            try:
+                import pyarrow.parquet as pq  # type: ignore[import-untyped]
+
+                parquet_file = pq.ParquetFile(file_path)
+                total_rows = parquet_file.metadata.num_rows
+            except Exception:
+                # If we can't get metadata, we'll count while reading
+                pass
+
         with create_reader(file_path) as reader:
             if not reader.fieldnames:
                 console.print(f"[red]Error: No columns found in {file_type} file[/red]")
@@ -72,19 +84,28 @@ def inspect_tabular(file_path: Path, num_records: int) -> None:
             for col in reader.fieldnames:
                 table.add_column(col, style="cyan", overflow="fold")
 
-            # Read and display sample records
-            rows = []
+            # Read and display only the sample records we need
+            rows_read = 0
             for i, row in enumerate(reader):
                 if i < num_records:
                     # Convert all values to strings for display
                     row_values = [str(row.get(col, "")) for col in reader.fieldnames]
                     table.add_row(*row_values)
-                rows.append(row)
+                    rows_read += 1
+                else:
+                    # If we already have the total from Parquet metadata, stop reading
+                    if total_rows is not None:
+                        break
+                    # Otherwise, just count remaining rows without storing them
+                    rows_read += 1
+
+            # If we didn't get total from metadata, use what we counted
+            if total_rows is None:
+                total_rows = rows_read
 
             console.print(table)
 
             # Display summary
-            total_rows = len(rows)
             console.print(
                 f"\n[green]Summary: {total_rows:,} rows total, "
                 f"{len(reader.fieldnames)} columns, {format_file_size(file_size)}[/green]"
