@@ -6,7 +6,7 @@ from pathlib import Path
 import click
 from rich.console import Console
 
-from crump.cdf_extractor import extract_cdf_to_csv
+from crump.cdf_extractor import extract_cdf_to_tabular_file
 from crump.config import CrumpConfig
 from crump.console_utils import BULLET, CHECKMARK, HORIZONTAL_LINE
 from crump.database import sync_csv_to_db, sync_csv_to_db_dry_run
@@ -14,30 +14,30 @@ from crump.database import sync_csv_to_db, sync_csv_to_db_dry_run
 console = Console()
 
 
-def _extract_cdf_and_find_csv(
+def _extract_cdf_and_find_tabular_files(
     cdf_file: Path, temp_dir: Path, max_records: int | None = None
 ) -> list[Path]:
-    """Extract CDF file to temporary CSV files.
+    """Extract CDF file to temporary tabular files (CSV).
 
     Args:
         cdf_file: Path to CDF file
-        temp_dir: Temporary directory for CSV extraction
+        temp_dir: Temporary directory for file extraction
         max_records: Maximum number of records to extract per variable (None = all)
 
     Returns:
-        List of extracted CSV file paths
+        List of extracted file paths
 
     Raises:
         ValueError: If extraction fails
     """
-    console.print("[dim]  Extracting CDF data to temporary CSV files...[/dim]")
+    console.print("[dim]  Extracting CDF data to temporary files...[/dim]")
 
     if max_records is not None:
         console.print(f"[dim]  Max records per variable: {max_records:,}[/dim]")
 
     try:
         # Extract data from CDF
-        results = extract_cdf_to_csv(
+        results = extract_cdf_to_tabular_file(
             cdf_file_path=cdf_file,
             output_dir=temp_dir,
             filename_template=f"{cdf_file.stem}_[VARIABLE_NAME].csv",
@@ -183,7 +183,7 @@ def sync(
             temp_dir = Path(tempfile.mkdtemp(prefix="crump_cdf_"))
 
             # Extract CDF to temporary CSV files
-            temp_csv_files = _extract_cdf_and_find_csv(file_path, temp_dir, max_records)
+            temp_csv_files = _extract_cdf_and_find_tabular_files(file_path, temp_dir, max_records)
 
             # Find the CSV file that matches this job's configuration
             # Try each extracted CSV to see which one works with this job

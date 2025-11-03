@@ -162,15 +162,14 @@ def _get_unique_filename(base_filename: str, used_filenames: set[str]) -> str:
         counter += 1
 
 
-def _validate_existing_file_header(
-    file_path: Path, expected_columns: list[str], file_format: str
-) -> bool:
+def _validate_existing_file_header(file_path: Path, expected_columns: list[str]) -> bool:
     """Validate that an existing CSV or Parquet file has the expected header.
+
+    File format is auto-detected from the file extension.
 
     Args:
         file_path: Path to the file
         expected_columns: Expected column names
-        file_format: File format ('csv' or 'parquet')
 
     Returns:
         True if headers match, False otherwise
@@ -178,14 +177,14 @@ def _validate_existing_file_header(
     try:
         from crump.tabular_file import create_reader
 
-        with create_reader(file_path, file_format=file_format) as reader:
+        with create_reader(file_path) as reader:
             existing_header = reader.fieldnames
             return existing_header == expected_columns
     except Exception:
         return False
 
 
-def extract_cdf_to_csv(
+def extract_cdf_to_tabular_file(
     cdf_file_path: Path,
     output_dir: Path,
     filename_template: str = "[SOURCE_FILE]-[VARIABLE_NAME].csv",
@@ -193,19 +192,22 @@ def extract_cdf_to_csv(
     append: bool = False,
     variable_names: list[str] | None = None,
     max_records: int | None = None,
-    use_parquet: bool = False,
+    use_parquet: bool = False,  # noqa: ARG001  # Deprecated parameter kept for compatibility
 ) -> list[ExtractionResult]:
     """Extract data from a CDF file to CSV or Parquet files.
+
+    The output format is determined automatically from the filename extension
+    in the filename_template (.csv for CSV, .parquet or .pq for Parquet).
 
     Args:
         cdf_file_path: Path to the CDF file
         output_dir: Directory to save output files
-        filename_template: Template for output filenames
+        filename_template: Template for output filenames (extension determines format)
         automerge: Whether to merge variables with same record count
         append: Whether to append to existing files
         variable_names: List of specific variables to extract (None = all)
         max_records: Maximum number of records to extract per variable (None = all)
-        use_parquet: Whether to output Parquet format instead of CSV
+        use_parquet: Deprecated. Use filename extension instead.
 
     Returns:
         List of ExtractionResult objects
@@ -293,14 +295,11 @@ def extract_cdf_to_csv(
                     "Use --append to add data to existing file."
                 )
 
-            # Determine file format
-            file_format = "parquet" if use_parquet else "csv"
-
             # Validate header if appending
             if (
                 append
                 and output_path.exists()
-                and not _validate_existing_file_header(output_path, all_column_names, file_format)
+                and not _validate_existing_file_header(output_path, all_column_names)
             ):
                 raise ValueError(
                     f"Cannot append to {output_path}: "
@@ -308,10 +307,10 @@ def extract_cdf_to_csv(
                     f"Expected columns: {', '.join(all_column_names)}"
                 )
 
-            # Write to file using tabular writer
+            # Write to file using tabular writer (format auto-detected from extension)
             write_append = append and output_path.exists()
 
-            with create_writer(output_path, file_format=file_format, append=write_append) as writer:
+            with create_writer(output_path, append=write_append) as writer:
                 # Write header only if not appending
                 if not write_append:
                     writer.writerow(all_column_names)
@@ -359,14 +358,11 @@ def extract_cdf_to_csv(
                     "Use --append to add data to existing file."
                 )
 
-            # Determine file format
-            file_format = "parquet" if use_parquet else "csv"
-
             # Validate header if appending
             if (
                 append
                 and output_path.exists()
-                and not _validate_existing_file_header(output_path, col_names, file_format)
+                and not _validate_existing_file_header(output_path, col_names)
             ):
                 raise ValueError(
                     f"Cannot append to {output_path}: "
@@ -374,10 +370,10 @@ def extract_cdf_to_csv(
                     f"Expected columns: {', '.join(col_names)}"
                 )
 
-            # Write to file using tabular writer
+            # Write to file using tabular writer (format auto-detected from extension)
             write_append = append and output_path.exists()
 
-            with create_writer(output_path, file_format=file_format, append=write_append) as writer:
+            with create_writer(output_path, append=write_append) as writer:
                 # Write header only if not appending
                 if not write_append:
                     writer.writerow(col_names)
@@ -468,9 +464,9 @@ def extract_cdf_with_config(
             raw_csv_path = raw_result.output_file
 
             try:
-                # Attempt to process this CSV with the job configuration
-                result = _transform_csv_with_config(
-                    raw_csv_path=raw_csv_path,
+                # Attempt to process this file with the job configuration
+                result = _transform_tabular_file_with_config(
+                    raw_file_path=raw_csv_path,
                     output_dir=output_dir,
                     cdf_file_path=cdf_file_path,
                     job=job,
@@ -485,7 +481,7 @@ def extract_cdf_with_config(
                     results.append(result)
 
             except ValueError:
-                # This CSV doesn't match the column mappings - skip it silently
+                # This file doesn't match the column mappings - skip it silently
                 # This is expected when a CDF has multiple variable groups
                 pass
 
@@ -502,8 +498,8 @@ def extract_cdf_with_config(
             pass  # Best effort cleanup
 
 
-def _transform_csv_with_config(
-    raw_csv_path: Path,
+def _transform_tabular_file_with_config(
+    raw_file_path: Path,
     output_dir: Path,
     cdf_file_path: Path,
     job: CrumpJob,
@@ -511,29 +507,31 @@ def _transform_csv_with_config(
     raw_result: ExtractionResult,
     append: bool = False,
     filename_template: str = "[SOURCE_FILE]_[VARIABLE_NAME].csv",
-    use_parquet: bool = False,
+    use_parquet: bool = False,  # noqa: ARG001  # Deprecated parameter kept for compatibility
 ) -> ExtractionResult | None:
-    """Transform a raw CSV using job configuration.
+    """Transform a raw tabular file using job configuration.
+
+    Output format is auto-detected from the filename extension.
 
     Args:
-        raw_csv_path: Path to raw CSV file
+        raw_file_path: Path to raw tabular file (CSV or Parquet)
         output_dir: Output directory for transformed output file
         cdf_file_path: Original CDF file path
         job: Job configuration
         filename_values: Extracted filename values
         raw_result: Result from raw extraction
         append: Whether to append to existing file
-        filename_template: Template for output filename
-        use_parquet: Whether to output Parquet format instead of CSV
+        filename_template: Template for output filename (extension determines format)
+        use_parquet: Deprecated. Use filename extension instead.
 
     Returns:
-        ExtractionResult if transformation succeeds, None if CSV doesn't match mappings
+        ExtractionResult if transformation succeeds, None if file doesn't match mappings
 
     Raises:
-        ValueError: If required columns are missing from CSV or append header mismatch
+        ValueError: If required columns are missing from file or append header mismatch
         FileExistsError: If output file exists and append is False
     """
-    with open(raw_csv_path, encoding="utf-8") as f:
+    with open(raw_file_path, encoding="utf-8") as f:
         reader = csv.DictReader(f)
         if not reader.fieldnames:
             return None
@@ -614,16 +612,13 @@ def _transform_csv_with_config(
 
         output_path = output_dir / output_filename
 
-        # Process rows and write output CSV
+        # Process rows and write output file
         output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Determine file format
-        file_format = "parquet" if use_parquet else "csv"
 
         # Check if we're appending and validate headers
         if append and output_path.exists():
             # Validate that existing file has same columns
-            if not _validate_existing_file_header(output_path, output_columns, file_format):
+            if not _validate_existing_file_header(output_path, output_columns):
                 raise ValueError(
                     f"Cannot append to {output_path.name}: "
                     f"existing file has different columns. "
@@ -642,9 +637,9 @@ def _transform_csv_with_config(
         f.seek(0)
         reader = csv.DictReader(f)
 
-        # Write using tabular file writer
+        # Write using tabular file writer (format auto-detected from extension)
         write_append = append and output_path.exists()
-        with create_writer(output_path, file_format=file_format, append=write_append) as writer:
+        with create_writer(output_path, append=write_append) as writer:
             # Write header only if not appending
             if not write_append:
                 writer.writerow(output_columns)
@@ -679,3 +674,7 @@ def _transform_csv_with_config(
             file_size=file_size,
             variable_names=raw_result.variable_names,
         )
+
+
+# Backward compatibility aliases
+extract_cdf_to_csv = extract_cdf_to_tabular_file  # Deprecated: use extract_cdf_to_tabular_file

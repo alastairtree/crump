@@ -478,16 +478,16 @@ class TestPrepareWithCDFFiles:
 
 
 class TestExtractCDFToTempCSV:
-    """Tests for the _extract_cdf_to_temp_csv helper function."""
+    """Tests for the _extract_cdf_to_temp_tabular_files helper function."""
 
     @pytest.fixture
     def sample_cdf(self) -> Path:
         """Get path to a sample CDF file."""
         return Path("tests/data/imap_mag_l1c_norm-magi_20251010_v001.cdf")
 
-    def test_extract_cdf_to_temp_csv(self, sample_cdf: Path, tmp_path: Path) -> None:
+    def test_extract_cdf_to_temp_tabular_files(self, sample_cdf: Path, tmp_path: Path) -> None:
         """Test extracting CDF to temporary CSV files."""
-        from crump.cli_prepare import _extract_cdf_to_temp_csv
+        from crump.cli_prepare import _extract_cdf_to_temp_tabular_files
 
         if not sample_cdf.exists():
             pytest.skip("Sample CDF file not found")
@@ -495,7 +495,7 @@ class TestExtractCDFToTempCSV:
         temp_dir = tmp_path / "temp"
         temp_dir.mkdir()
 
-        csv_files = _extract_cdf_to_temp_csv(sample_cdf, temp_dir, max_records=50)
+        csv_files = _extract_cdf_to_temp_tabular_files(sample_cdf, temp_dir, max_records=50)
 
         # Should create at least one CSV file
         assert len(csv_files) > 0
@@ -513,7 +513,7 @@ class TestExtractCDFToTempCSV:
 
     def test_extract_cdf_max_records_limit(self, sample_cdf: Path, tmp_path: Path) -> None:
         """Test that max_records parameter limits extraction."""
-        from crump.cli_prepare import _extract_cdf_to_temp_csv
+        from crump.cli_prepare import _extract_cdf_to_temp_tabular_files
 
         if not sample_cdf.exists():
             pytest.skip("Sample CDF file not found")
@@ -521,7 +521,7 @@ class TestExtractCDFToTempCSV:
         temp_dir = tmp_path / "temp"
         temp_dir.mkdir()
 
-        csv_files = _extract_cdf_to_temp_csv(sample_cdf, temp_dir, max_records=10)
+        csv_files = _extract_cdf_to_temp_tabular_files(sample_cdf, temp_dir, max_records=10)
 
         # Verify extracted CSVs have at most 10 rows (plus header)
         for csv_file in csv_files:

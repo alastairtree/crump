@@ -183,19 +183,23 @@ def test_create_writer_parquet_auto_detect(tmp_path: Path) -> None:
 
 
 def test_create_reader_unsupported_format(tmp_path: Path) -> None:
-    """Test that unsupported formats raise ValueError."""
+    """Test that unsupported formats default to CSV for backward compatibility."""
+    # Create a CSV file with .txt extension
     bad_file = tmp_path / "test.txt"
-    bad_file.write_text("some content")
+    bad_file.write_text("col1,col2\nval1,val2\n")
 
-    with pytest.raises(ValueError, match="Cannot auto-detect file format"):
-        create_reader(bad_file)
+    # Should default to CSV format for unknown extensions
+    with create_reader(bad_file) as reader:
+        assert reader.fieldnames == ["col1", "col2"]
+        rows = list(reader)
+        assert len(rows) == 1
 
 
 def test_create_writer_unsupported_format(tmp_path: Path) -> None:
     """Test that unsupported formats raise ValueError."""
     bad_file = tmp_path / "test.txt"
 
-    with pytest.raises(ValueError, match="Cannot auto-detect file format"):
+    with pytest.raises(ValueError, match="Unsupported output file extension"):
         create_writer(bad_file)
 
 
