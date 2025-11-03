@@ -40,6 +40,7 @@ crump sync FILE_PATH CONFIG JOB [OPTIONS]
 | `--db-url TEXT` | String | `$DATABASE_URL` | PostgreSQL connection string |
 | `--dry-run` | Flag | False | Simulate sync without making database changes |
 | `--max-records INTEGER` | Integer | None (all) | Maximum number of records to extract per variable from CDF files |
+| `--history/--no-history` | Flag | False | Record sync history in `_crump_history` table |
 
 #### Environment Variables
 
@@ -86,6 +87,12 @@ crump sync data.csv crump_config.yaml my_job --dry-run
 crump sync data.cdf crump_config.yaml my_job --dry-run --max-records 100
 ```
 
+**Enable history tracking:**
+
+```bash
+crump sync data.csv crump_config.yaml my_job --history
+```
+
 #### Output
 
 **Normal mode:**
@@ -97,7 +104,10 @@ Syncing data.csv using job 'my_job'...
   Table: my_table
   File: data.csv
   Extracted values: {'date': '2024-01-15'}
+  History recorded in _crump_history table
 ```
+
+**Note**: The history message only appears when `--history` flag is used.
 
 **Dry-run mode:**
 

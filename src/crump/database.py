@@ -943,22 +943,34 @@ class DatabaseConnection:
 
     def _setup_table_schema(
         self, job: CrumpJob, columns_def: dict[str, str], primary_keys: list[str]
-    ) -> None:
+    ) -> bool:
         """Create table and add missing columns/indexes.
 
         Args:
             job: CrumpJob configuration
             columns_def: Dictionary mapping column names to SQL types
             primary_keys: List of primary key column names
+
+        Returns:
+            True if schema changes were made (table created, columns added, or indexes created)
         """
+        schema_changed = False
+
+        # Check if table exists before creating
+        table_existed = self.table_exists(job.target_table)
+
         # Create table if it doesn't exist
         self.create_table_if_not_exists(job.target_table, columns_def, primary_keys)
+
+        if not table_existed:
+            schema_changed = True
 
         # Check for schema evolution: add missing columns from config
         existing_columns = self.get_existing_columns(job.target_table)
         for col_name, col_type in columns_def.items():
             if col_name.lower() not in existing_columns:
                 self.add_column(job.target_table, col_name, col_type)
+                schema_changed = True
 
         # Create indexes that don't already exist
         if job.indexes:
@@ -967,6 +979,9 @@ class DatabaseConnection:
                 if index.name.lower() not in existing_indexes:
                     index_columns = [(col.column, col.order) for col in index.columns]
                     self.create_index(job.target_table, index.name, index_columns)
+                    schema_changed = True
+
+        return schema_changed
 
     def _should_include_row(
         self, row_index: int, total_rows: int, sample_percentage: float | None
@@ -1239,6 +1254,7 @@ class DatabaseConnection:
         csv_path: Path,
         job: CrumpJob,
         filename_values: dict[str, str] | None = None,
+        enable_history: bool = False,
     ) -> int:
         """Sync a CSV file to the database using job configuration.
 
@@ -1246,6 +1262,7 @@ class DatabaseConnection:
             csv_path: Path to CSV file
             job: CrumpJob configuration
             filename_values: Optional dict of values extracted from filename
+            enable_history: Whether to record sync history
 
         Returns:
             Number of rows synced
@@ -1254,40 +1271,77 @@ class DatabaseConnection:
             FileNotFoundError: If CSV file doesn't exist
             ValueError: If CSV is invalid or columns don't match
         """
-        # Prepare sync (validates CSV and builds schema)
-        csv_columns, sync_columns, columns_def = self._prepare_sync(csv_path, job)
+        from crump.history import get_utc_now, record_sync_history
 
-        # Build schema and setup table
-        primary_keys = [id_col.db_column for id_col in job.id_mapping]
-        logger.debug(f"Primary keys for table {job.target_table}: {primary_keys}")
-        self._setup_table_schema(job, columns_def, primary_keys)
+        # Track timing if history is enabled
+        start_time = get_utc_now() if enable_history else None
+        rows_deleted = 0
+        schema_changed = False
+        error_message: str | None = None
+        success = False
 
-        # Process CSV rows
-        with open(csv_path, encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            rows_synced, synced_ids = self._process_csv_rows(
-                reader, job, sync_columns, primary_keys, filename_values
-            )
+        try:
+            # Prepare sync (validates CSV and builds schema)
+            csv_columns, sync_columns, columns_def = self._prepare_sync(csv_path, job)
 
-        # Clean up stale records
-        if job.filename_to_column and filename_values:
-            delete_key_columns = job.filename_to_column.get_delete_key_columns()
-            if delete_key_columns:
-                # Build compound key values from filename_values
-                delete_key_values = {}
-                for col_name, col_mapping in job.filename_to_column.columns.items():
-                    if col_mapping.use_to_delete_old_rows and col_name in filename_values:
-                        delete_key_values[col_mapping.db_column] = filename_values[col_name]
+            # Build schema and setup table
+            primary_keys = [id_col.db_column for id_col in job.id_mapping]
+            logger.debug(f"Primary keys for table {job.target_table}: {primary_keys}")
+            schema_changed = self._setup_table_schema(job, columns_def, primary_keys)
 
-                id_columns = [id_col.db_column for id_col in job.id_mapping]
-                self.delete_stale_records_compound(
-                    job.target_table,
-                    id_columns,
-                    delete_key_values,
-                    synced_ids,
+            # Process CSV rows
+            with open(csv_path, encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                rows_synced, synced_ids = self._process_csv_rows(
+                    reader, job, sync_columns, primary_keys, filename_values
                 )
 
-        return rows_synced
+            # Clean up stale records
+            if job.filename_to_column and filename_values:
+                delete_key_columns = job.filename_to_column.get_delete_key_columns()
+                if delete_key_columns:
+                    # Build compound key values from filename_values
+                    delete_key_values = {}
+                    for col_name, col_mapping in job.filename_to_column.columns.items():
+                        if col_mapping.use_to_delete_old_rows and col_name in filename_values:
+                            delete_key_values[col_mapping.db_column] = filename_values[col_name]
+
+                    id_columns = [id_col.db_column for id_col in job.id_mapping]
+                    rows_deleted = self.delete_stale_records_compound(
+                        job.target_table,
+                        id_columns,
+                        delete_key_values,
+                        synced_ids,
+                    )
+
+            success = True
+            return rows_synced
+
+        except Exception as e:
+            error_message = str(e)
+            raise
+
+        finally:
+            # Record history if enabled and we have a backend
+            if enable_history and self.backend and start_time:
+                end_time = get_utc_now()
+                # If sync failed, rows_synced might not be set
+                final_rows_synced = rows_synced if success else 0
+                try:
+                    record_sync_history(
+                        backend=self.backend,
+                        file_path=csv_path,
+                        rows_upserted=final_rows_synced,
+                        rows_deleted=rows_deleted,
+                        schema_changed=schema_changed,
+                        start_time=start_time,
+                        end_time=end_time,
+                        success=success,
+                        error=error_message,
+                    )
+                except Exception as hist_error:
+                    # Don't fail the sync if history recording fails
+                    logger.warning(f"Failed to record sync history: {hist_error}")
 
 
 def sync_csv_to_db(
@@ -1295,6 +1349,7 @@ def sync_csv_to_db(
     job: CrumpJob,
     db_connection_string: str,
     filename_values: dict[str, str] | None = None,
+    enable_history: bool = False,
 ) -> int:
     """Sync a CSV file to database.
 
@@ -1303,12 +1358,13 @@ def sync_csv_to_db(
         job: CrumpJob configuration
         db_connection_string: Database connection string (PostgreSQL or SQLite)
         filename_values: Optional dict of values extracted from filename
+        enable_history: Whether to record sync history
 
     Returns:
         Number of rows synced
     """
     with DatabaseConnection(db_connection_string) as db:
-        return db.sync_csv_file(csv_path, job, filename_values)
+        return db.sync_csv_file(csv_path, job, filename_values, enable_history)
 
 
 def sync_csv_to_db_dry_run(

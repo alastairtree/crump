@@ -87,6 +87,11 @@ def _extract_cdf_and_find_csv(
     default=None,
     help="Maximum number of records to extract per variable from CDF files (default: extract all records)",
 )
+@click.option(
+    "--history/--no-history",
+    default=False,
+    help="Record sync history in _crump_history table (default: no history)",
+)
 def sync(
     file_path: Path,
     config: Path,
@@ -94,6 +99,7 @@ def sync(
     db_url: str,
     dry_run: bool,
     max_records: int | None,
+    history: bool,
 ) -> None:
     """Sync a CSV or CDF file to the database using a configuration.
 
@@ -129,6 +135,9 @@ def sync(
 
         # Dry-run with limited records from CDF and auto-detected job
         crump sync data.cdf crump_config.yaml --dry-run --max-records 100
+
+        # Enable history tracking
+        crump sync data.csv crump_config.yaml --job my_job --history
     """
     temp_dir: Path | None = None
     temp_csv_files: list[Path] = []
@@ -223,6 +232,7 @@ def sync(
             console.print(
                 f"[cyan]DRY RUN: Simulating sync of {csv_file_to_sync.name} using job '{job}'...[/cyan]"
             )
+            # History is never recorded during dry-run
             summary = sync_csv_to_db_dry_run(csv_file_to_sync, crump_job, db_url, filename_values)
 
             # Display dry-run summary
@@ -279,7 +289,9 @@ def sync(
         else:
             # Sync the file
             console.print(f"[cyan]Syncing {csv_file_to_sync.name} using job '{job}'...[/cyan]")
-            rows_synced = sync_csv_to_db(csv_file_to_sync, crump_job, db_url, filename_values)
+            rows_synced = sync_csv_to_db(
+                csv_file_to_sync, crump_job, db_url, filename_values, enable_history=history
+            )
 
             console.print(f"[green]{CHECKMARK} Successfully synced {rows_synced} rows[/green]")
             console.print(f"[dim]  Table: {crump_job.target_table}[/dim]")
@@ -288,6 +300,8 @@ def sync(
                 console.print(f"[dim]  CSV extracted: {csv_file_to_sync.name}[/dim]")
             if filename_values:
                 console.print(f"[dim]  Extracted values: {filename_values}[/dim]")
+            if history:
+                console.print("[dim]  History recorded in _crump_history table[/dim]")
 
     except FileNotFoundError as e:
         console.print(f"[red]Error:[/red] {e}")
