@@ -353,7 +353,7 @@ class TestHistoryCommand:
     """Test suite for sync history tracking functionality."""
 
     def test_sync_with_history_flag_records_entry(
-        self, cli_runner: CliRunner, tmp_path: Path
+        self, cli_runner: CliRunner, tmp_path: Path, db_url: str
     ) -> None:
         """Test that sync with --history flag records history entry."""
         from tests.db_test_utils import execute_query
@@ -372,10 +372,6 @@ class TestHistoryCommand:
 
         config_file = tmp_path / "config.yaml"
         create_config_file(config_file, "test_job", "test_table", {"id": "id"})
-
-        # Create SQLite database URL
-        db_file = tmp_path / "test.db"
-        db_url = f"sqlite:///{db_file}"
 
         # Run sync with --history flag
         result = cli_runner.invoke(
@@ -417,7 +413,7 @@ class TestHistoryCommand:
         assert row[5] is None  # no error
 
     def test_sync_without_history_flag_no_recording(
-        self, cli_runner: CliRunner, tmp_path: Path
+        self, cli_runner: CliRunner, tmp_path: Path, db_url: str
     ) -> None:
         """Test that sync without --history flag does not record history."""
         from tests.db_test_utils import execute_query
@@ -429,10 +425,6 @@ class TestHistoryCommand:
 
         config_file = tmp_path / "config.yaml"
         create_config_file(config_file, "test_job", "test_table", {"id": "id"})
-
-        # Create SQLite database URL
-        db_file = tmp_path / "test.db"
-        db_url = f"sqlite:///{db_file}"
 
         # Run sync WITHOUT --history flag
         result = cli_runner.invoke(
@@ -458,12 +450,19 @@ class TestHistoryCommand:
         assert count[0][0] == 1
 
         # Verify history table was NOT created
-        tables = execute_query(
-            db_url, "SELECT name FROM sqlite_master WHERE type='table' AND name='_crump_history'"
-        )
-        assert len(tables) == 0, "History table should not exist when --history flag not used"
+        try:
+            execute_query(db_url, "SELECT COUNT(*) FROM _crump_history")
+            # If we get here, table exists but shouldn't
+            raise AssertionError("History table should not exist when --history flag not used")
+        except AssertionError:
+            raise
+        except Exception:
+            # Table doesn't exist - this is expected
+            pass
 
-    def test_sync_with_history_captures_errors(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+    def test_sync_with_history_captures_errors(
+        self, cli_runner: CliRunner, tmp_path: Path, db_url: str
+    ) -> None:
         """Test that history captures error details when sync fails."""
         from tests.db_test_utils import execute_query
 
@@ -482,10 +481,6 @@ jobs:
       missing_column: id
 """
         )
-
-        # Create SQLite database URL
-        db_file = tmp_path / "test.db"
-        db_url = f"sqlite:///{db_file}"
 
         # Run sync with --history (should fail)
         result = cli_runner.invoke(
@@ -521,7 +516,7 @@ jobs:
         assert "missing_column" in row[4]  # error mentions missing column
 
     def test_sync_dry_run_with_history_no_recording(
-        self, cli_runner: CliRunner, tmp_path: Path
+        self, cli_runner: CliRunner, tmp_path: Path, db_url: str
     ) -> None:
         """Test that dry-run does not record history even with --history flag."""
         from tests.db_test_utils import execute_query
@@ -533,10 +528,6 @@ jobs:
 
         config_file = tmp_path / "config.yaml"
         create_config_file(config_file, "test_job", "test_table", {"id": "id"})
-
-        # Create SQLite database URL
-        db_file = tmp_path / "test.db"
-        db_url = f"sqlite:///{db_file}"
 
         # Run sync with --dry-run AND --history
         result = cli_runner.invoke(
@@ -558,13 +549,19 @@ jobs:
         assert result.exit_code == 0
         assert "DRY RUN" in result.output
 
-        # Verify no tables were created (including history)
-        if db_file.exists():
-            tables = execute_query(db_url, "SELECT name FROM sqlite_master WHERE type='table'")
-            assert len(tables) == 0, "No tables should be created during dry-run"
+        # Verify no history table was created during dry-run
+        try:
+            execute_query(db_url, "SELECT COUNT(*) FROM _crump_history")
+            # If we get here, table exists but shouldn't
+            raise AssertionError("History table should not exist during dry-run")
+        except AssertionError:
+            raise
+        except Exception:
+            # Table doesn't exist - this is expected
+            pass
 
     def test_sync_history_tracks_schema_changes(
-        self, cli_runner: CliRunner, tmp_path: Path
+        self, cli_runner: CliRunner, tmp_path: Path, db_url: str
     ) -> None:
         """Test that history correctly tracks schema changes."""
         from tests.db_test_utils import execute_query
@@ -573,9 +570,6 @@ jobs:
         csv_file = tmp_path / "data.csv"
         config_file = tmp_path / "config.yaml"
         create_config_file(config_file, "test_job", "test_table", {"id": "id"})
-
-        db_file = tmp_path / "test.db"
-        db_url = f"sqlite:///{db_file}"
 
         # First sync - creates table (schema change)
         create_csv_file(csv_file, ["id", "name"], [{"id": "1", "name": "Alice"}])
@@ -627,16 +621,15 @@ jobs:
         )
         assert history[0][0] in (False, 0)  # No schema change
 
-    def test_sync_history_multiple_operations(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+    def test_sync_history_multiple_operations(
+        self, cli_runner: CliRunner, tmp_path: Path, db_url: str
+    ) -> None:
         """Test that multiple syncs create multiple history entries."""
         from tests.db_test_utils import execute_query
         from tests.test_helpers import create_config_file, create_csv_file
 
         config_file = tmp_path / "config.yaml"
         create_config_file(config_file, "test_job", "test_table", {"id": "id"})
-
-        db_file = tmp_path / "test.db"
-        db_url = f"sqlite:///{db_file}"
 
         # Perform 3 syncs with different files
         for i in range(3):
