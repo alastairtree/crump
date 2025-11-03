@@ -46,7 +46,14 @@ def inspect_tabular(file_path: Path, num_records: int) -> None:
         click.ClickException: If the file cannot be read or parsed
     """
     # Detect file type for display
-    file_type = "Parquet" if file_path.suffix.lower() in [".parquet", ".pq"] else "CSV"
+    from crump.file_types import InputFileType
+
+    try:
+        detected_type = InputFileType.from_path(str(file_path))
+        file_type = "Parquet" if detected_type == InputFileType.PARQUET else "CSV"
+    except ValueError:
+        file_type = "CSV"  # Default to CSV for unknown extensions
+
     console.print(f"\n[bold cyan]{file_type} File: {file_path.name}[/bold cyan]")
     console.print(f"[dim]Path: {file_path}[/dim]")
 
@@ -383,14 +390,23 @@ def inspect(files: tuple[Path, ...], max_records: int) -> None:
         crump inspect data/*.csv
     """
     try:
+        from crump.file_types import InputFileType
+
         for file_path in files:
             # Determine file type and inspect
-            suffix = file_path.suffix.lower()
-            if suffix in [".csv", ".parquet", ".pq"]:
-                inspect_tabular(file_path, max_records)
-            elif suffix == ".cdf":
-                inspect_cdf(file_path, max_records)
-            else:
+            try:
+                file_type = InputFileType.from_path(str(file_path))
+
+                if file_type in [InputFileType.CSV, InputFileType.PARQUET]:
+                    inspect_tabular(file_path, max_records)
+                elif file_type == InputFileType.CDF:
+                    inspect_cdf(file_path, max_records)
+                else:
+                    console.print(
+                        f"\n[yellow]Warning: Unsupported file type '{file_path.suffix}' "
+                        f"for {file_path.name}[/yellow]"
+                    )
+            except ValueError:
                 console.print(
                     f"\n[yellow]Warning: Unsupported file type '{file_path.suffix}' "
                     f"for {file_path.name}[/yellow]"
