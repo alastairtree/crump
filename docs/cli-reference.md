@@ -19,7 +19,7 @@ crump [OPTIONS] COMMAND [ARGS]...
 
 ### sync
 
-Sync a CSV or CDF file to the database using a configuration.
+Sync a CSV, Parquet, or CDF file to the database using a configuration.
 
 ```bash
 crump sync FILE_PATH CONFIG JOB [OPTIONS]
@@ -29,7 +29,7 @@ crump sync FILE_PATH CONFIG JOB [OPTIONS]
 
 | Argument | Type | Required | Description |
 |----------|------|----------|-------------|
-| `FILE_PATH` | Path | Yes | Path to the CSV or CDF file to sync |
+| `FILE_PATH` | Path | Yes | Path to the CSV, Parquet, or CDF file to sync |
 | `CONFIG` | Path | Yes | Path to the YAML configuration file |
 | `JOB` | String | Yes | Name of the job to run from config |
 
@@ -54,6 +54,12 @@ crump sync FILE_PATH CONFIG JOB [OPTIONS]
 
 ```bash
 crump sync data.csv crump_config.yaml my_job --db-url postgresql://localhost/mydb
+```
+
+**Sync Parquet file:**
+
+```bash
+crump sync data.parquet crump_config.yaml my_job --db-url postgresql://localhost/mydb
 ```
 
 **Sync CDF file (automatic extraction):**
@@ -259,7 +265,7 @@ Analyzing users_2024.csv...
 
 ### inspect
 
-Inspect CSV or CDF files and display summary information.
+Inspect CSV, Parquet, or CDF files and display summary information.
 
 ```bash
 crump inspect FILES... [OPTIONS]
@@ -269,7 +275,7 @@ crump inspect FILES... [OPTIONS]
 
 | Argument | Type | Required | Description |
 |----------|------|----------|-------------|
-| `FILES` | Path(s) | Yes | One or more file paths to inspect |
+| `FILES` | Path(s) | Yes | One or more CSV, Parquet, or CDF file paths to inspect |
 
 #### Options
 
@@ -283,6 +289,12 @@ crump inspect FILES... [OPTIONS]
 
 ```bash
 crump inspect users.csv
+```
+
+**Inspect a Parquet file:**
+
+```bash
+crump inspect users.parquet
 ```
 
 **Inspect a CDF file:**
@@ -315,11 +327,13 @@ Displays:
 
 ### extract
 
-Extract data from CDF files to CSV format.
+Extract data from CDF files to CSV or Parquet format.
 
 Supports two modes:
-1. **Raw extraction** (default): Extracts all CDF variables to CSV with automatic column naming
-2. **Config-based extraction**: Uses job configuration to select, rename, and transform columns (same as `sync` command but outputs to CSV)
+1. **Raw extraction** (default): Extracts all CDF variables with automatic column naming
+2. **Config-based extraction**: Uses job configuration to select, rename, and transform columns (same as `sync` command but outputs to file)
+
+Output format is determined by the filename extension (.csv for CSV, .parquet or .pq for Parquet) or by using the `--parquet` flag.
 
 ```bash
 crump extract FILES... [OPTIONS]
@@ -335,11 +349,12 @@ crump extract FILES... [OPTIONS]
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--output-path`, `-o` | Path | Current directory | Output directory for CSV files |
-| `--filename` | String | `[SOURCE_FILE]-[VARIABLE_NAME].csv` | Template for output filenames (raw mode only) |
+| `--output-path`, `-o` | Path | Current directory | Output directory for files |
+| `--filename` | String | `[SOURCE_FILE]-[VARIABLE_NAME].csv` | Template for output filenames (extension determines format) |
+| `--parquet` | Flag | False | Output to Parquet format instead of CSV |
 | `--automerge` | Flag | True | Merge variables with same record count (raw mode only) |
-| `--no-automerge` | Flag | - | Create separate CSV for each variable (raw mode only) |
-| `--append` | Flag | False | Append to existing CSV files (raw mode only) |
+| `--no-automerge` | Flag | - | Create separate file for each variable (raw mode only) |
+| `--append` | Flag | False | Append to existing files (raw mode only) |
 | `--variables`, `-v` | String(s) | All | Specific variable names to extract (raw mode only) |
 | `--max-records` | Integer | None (all) | Maximum number of records to extract per variable |
 | `--config`, `-c` | Path | None | YAML configuration file (requires `--job`) |
@@ -377,6 +392,18 @@ crump extract data.cdf --variables Epoch --variables B_field
 
 ```bash
 crump extract data.cdf --no-automerge
+```
+
+**Extract to Parquet format:**
+
+```bash
+crump extract data.cdf --parquet
+```
+
+**Extract to Parquet using filename extension:**
+
+```bash
+crump extract data.cdf --filename "[SOURCE_FILE]-[VARIABLE_NAME].parquet"
 ```
 
 **Config-Based Extraction Mode:**
