@@ -21,33 +21,36 @@ pip install crump
 
 ```python
 from pathlib import Path
-from crump import sync_csv_to_db, CrumpConfig
+from crump import sync_tabular_file_to_db, CrumpConfig
 
 # Load configuration
 config = CrumpConfig.from_yaml(Path("crump_config.yaml"))
 job = config.get_job("my_job")
 
-# Sync a CSV file
-rows_synced = sync_csv_to_db(
-    file_path=Path("users.csv"),
-    crump_job=job,
-    db_url="sqlite:///test.db"
+# Sync a tabular file (CSV or Parquet)
+rows_synced = sync_tabular_file_to_db(
+    file_path=Path("users.parquet"),
+    job=job,
+    db_connection_string="sqlite:///test.db"
 )
 print(f"Synced {rows_synced} rows")
 ```
 
 ## Core Functions
 
-### sync_csv_to_db
+### sync_tabular_file_to_db
 
-Sync a CSV file to a database (PostgreSQL or SQLite).
+Sync a tabular file (CSV or Parquet) to a database (PostgreSQL or SQLite).
+
+File format is automatically detected from the file extension.
 
 ```python
-def sync_csv_to_db(
+def sync_tabular_file_to_db(
     file_path: Path,
-    crump_job: CrumpJob,
-    db_url: str,
-    filename_values: dict[str, str] | None = None
+    job: CrumpJob,
+    db_connection_string: str,
+    filename_values: dict[str, str] | None = None,
+    enable_history: bool = False
 ) -> int
 ```
 
@@ -55,15 +58,16 @@ def sync_csv_to_db(
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `file_path` | `Path` | Path to the CSV file to sync |
-| `crump_job` | `CrumpJob` | Configuration for the sync job |
-| `db_url` | `str` | Database connection string |
+| `file_path` | `Path` | Path to the tabular file (CSV or Parquet) to sync |
+| `job` | `CrumpJob` | Configuration for the sync job |
+| `db_connection_string` | `str` | Database connection string (PostgreSQL or SQLite) |
 | `filename_values` | `dict[str, str] \| None` | Extracted values from filename (optional) |
+| `enable_history` | `bool` | Whether to record sync history (default: False) |
 
 **Returns**: Number of rows synced (int)
 
 **Raises**:
-- `FileNotFoundError`: CSV file doesn't exist
+- `FileNotFoundError`: File doesn't exist
 - `ValueError`: Invalid configuration or data
 - `DatabaseError`: Database connection or query errors
 
@@ -71,13 +75,20 @@ def sync_csv_to_db(
 
 ```python
 from pathlib import Path
-from crump import sync_csv_to_db, CrumpConfig
+from crump import sync_tabular_file_to_db, CrumpConfig
 
 config = CrumpConfig.from_yaml(Path("crump_config.yaml"))
 job = config.get_job("users_sync")
 
-# Basic sync
-rows = sync_csv_to_db(
+# Sync CSV file
+rows = sync_tabular_file_to_db(
+    file_path=Path("users.csv"),
+    job=job,
+    db_connection_string="postgresql://localhost/mydb"
+)
+
+# Sync Parquet file (format auto-detected from extension)
+rows = sync_tabular_file_to_db(
     file_path=Path("users.csv"),
     crump_job=job,
     db_url="sqlite:///test.db"
