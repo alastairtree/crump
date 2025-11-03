@@ -202,8 +202,3 @@ def suggest_id_column(columns: list[str], matchers: list[str] | None = None) -> 
 
     # Default to first column
     return columns[0] if columns else "id"
-
-
-# Backward compatibility aliases
-analyze_csv_types = analyze_tabular_file_types  # Deprecated: use analyze_tabular_file_types
-analyze_csv_types_and_nullable = analyze_tabular_file_types_and_nullable  # Deprecated: use analyze_tabular_file_types_and_nullable

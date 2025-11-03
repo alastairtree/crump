@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from crump.config import CrumpConfig
-from crump.database import DatabaseConnection, sync_csv_to_db
+from crump.database import DatabaseConnection, sync_tabular_file_to_db
 from crump.history import (
     SyncHistoryEntry,
     _calculate_file_hash,
@@ -211,7 +211,7 @@ class TestHistoryIntegration:
         assert job is not None
 
         # Sync with history enabled
-        rows_synced = sync_csv_to_db(csv_file, job, db_url, enable_history=True)
+        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url, enable_history=True)
         assert rows_synced == 2
 
         # Verify history was recorded
@@ -248,7 +248,7 @@ class TestHistoryIntegration:
         assert job is not None
 
         # Sync with history disabled
-        rows_synced = sync_csv_to_db(csv_file, job, db_url, enable_history=False)
+        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url, enable_history=False)
         assert rows_synced == 1
 
         # Verify history table doesn't exist
@@ -268,7 +268,7 @@ class TestHistoryIntegration:
         assert job is not None
 
         # First sync - creates table (schema change)
-        sync_csv_to_db(csv_file, job, db_url, enable_history=True)
+        sync_tabular_file_to_db(csv_file, job, db_url, enable_history=True)
 
         history_rows = execute_query(
             db_url,
@@ -279,7 +279,7 @@ class TestHistoryIntegration:
 
         # Second sync - no schema changes
         create_csv_file(csv_file, ["id", "name"], [{"id": "2", "name": "Bob"}])
-        sync_csv_to_db(csv_file, job, db_url, enable_history=True)
+        sync_tabular_file_to_db(csv_file, job, db_url, enable_history=True)
 
         history_rows = execute_query(
             db_url,
@@ -320,13 +320,13 @@ jobs:
 
         # First sync with date 2024-01-01 (2 rows)
         filename_values = {"date": "2024-01-01"}
-        sync_csv_to_db(csv_file, job, db_url, filename_values, enable_history=True)
+        sync_tabular_file_to_db(csv_file, job, db_url, filename_values, enable_history=True)
 
         # Second sync with SAME date but only one row (should delete the other row for that date)
         csv_file2 = tmp_path / "data_2024-01-01_corrected.csv"
         create_csv_file(csv_file2, ["id", "name"], [{"id": "1", "name": "Alice Updated"}])
         filename_values2 = {"date": "2024-01-01"}
-        sync_csv_to_db(csv_file2, job, db_url, filename_values2, enable_history=True)
+        sync_tabular_file_to_db(csv_file2, job, db_url, filename_values2, enable_history=True)
 
         # Check history for deletions - second sync should delete 1 row (Bob)
         history_rows = execute_query(
@@ -352,7 +352,7 @@ jobs:
         expected_hash = _calculate_file_hash(csv_file)
 
         # Sync with history
-        sync_csv_to_db(csv_file, job, db_url, enable_history=True)
+        sync_tabular_file_to_db(csv_file, job, db_url, enable_history=True)
 
         # Verify hash in history
         history_rows = execute_query(
@@ -373,7 +373,7 @@ jobs:
         assert job is not None
 
         # Sync with history
-        sync_csv_to_db(csv_file, job, db_url, enable_history=True)
+        sync_tabular_file_to_db(csv_file, job, db_url, enable_history=True)
 
         # Verify duration is recorded and reasonable
         history_rows = execute_query(
@@ -397,7 +397,7 @@ jobs:
         # Sync 3 times
         for i in range(3):
             create_csv_file(csv_file, ["id", "name"], [{"id": str(i), "name": f"User{i}"}])
-            sync_csv_to_db(csv_file, job, db_url, enable_history=True)
+            sync_tabular_file_to_db(csv_file, job, db_url, enable_history=True)
 
         # Verify 3 history entries
         rows = execute_query(db_url, "SELECT COUNT(*) FROM _crump_history")
@@ -427,7 +427,7 @@ jobs:
 
         # Sync should fail
         with pytest.raises(ValueError):
-            sync_csv_to_db(csv_file, job, db_url, enable_history=True)
+            sync_tabular_file_to_db(csv_file, job, db_url, enable_history=True)
 
         # Verify history was still recorded
         rows = execute_query(db_url, "SELECT COUNT(*) FROM _crump_history")

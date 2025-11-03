@@ -33,13 +33,10 @@ from crump.config import (
 )
 from crump.database import (
     DryRunSummary,
-    sync_csv_to_db,  # Backward compatibility
-    sync_csv_to_db_dry_run,  # Backward compatibility
     sync_tabular_file_to_db,
     sync_tabular_file_to_db_dry_run,
 )
 from crump.type_detection import (
-    analyze_csv_types_and_nullable,  # Backward compatibility
     analyze_tabular_file_types_and_nullable,
     suggest_id_column,
 )
@@ -55,11 +52,8 @@ __all__ = [
     # Database operations
     "sync_tabular_file_to_db",
     "sync_tabular_file_to_db_dry_run",
-    "sync_csv_to_db",  # Deprecated alias
-    "sync_csv_to_db_dry_run",  # Deprecated alias
     "DryRunSummary",
     # Type detection
     "analyze_tabular_file_types_and_nullable",
-    "analyze_csv_types_and_nullable",  # Deprecated alias
     "suggest_id_column",
 ]

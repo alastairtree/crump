@@ -441,7 +441,7 @@ def extract_cdf_with_config(
     results = []
 
     try:
-        raw_results = extract_cdf_to_csv(
+        raw_results = extract_cdf_to_tabular_file(
             cdf_file_path=cdf_file_path,
             output_dir=temp_dir,
             filename_template=f"{cdf_file_path.stem}_[VARIABLE_NAME].csv",
@@ -674,7 +674,3 @@ def _transform_tabular_file_with_config(
             file_size=file_size,
             variable_names=raw_result.variable_names,
         )
-
-
-# Backward compatibility aliases
-extract_cdf_to_csv = extract_cdf_to_tabular_file  # Deprecated: use extract_cdf_to_tabular_file

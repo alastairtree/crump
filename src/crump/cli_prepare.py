@@ -19,7 +19,7 @@ from crump.config import (
     IndexColumn,
 )
 from crump.console_utils import CHECKMARK
-from crump.type_detection import analyze_csv_types_and_nullable, suggest_id_column
+from crump.type_detection import analyze_tabular_file_types_and_nullable, suggest_id_column
 
 console = Console()
 
@@ -454,7 +454,7 @@ def prepare(file_paths: tuple[Path, ...], config: Path, job: str | None, force: 
             console.print(f"[dim]  Job name: {job_name}[/dim]")
 
             # Analyze CSV file to detect types and nullable status
-            column_info = analyze_csv_types_and_nullable(file_path)
+            column_info = analyze_tabular_file_types_and_nullable(file_path)
 
             if not column_info:
                 console.print("[red]Error:[/red] No columns found in CSV file")

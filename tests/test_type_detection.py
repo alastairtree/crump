@@ -4,7 +4,7 @@ import csv
 from pathlib import Path
 
 from crump.type_detection import (
-    analyze_csv_types,
+    analyze_tabular_file_types,
     detect_column_type,
     suggest_id_column,
 )
@@ -131,7 +131,7 @@ class TestAnalyzeCsvTypes:
             writer.writerow({"id": "1", "name": "Alice", "age": "25", "price": "19.99"})
             writer.writerow({"id": "2", "name": "Bob", "age": "30", "price": "29.99"})
 
-        types = analyze_csv_types(csv_file)
+        types = analyze_tabular_file_types(csv_file)
 
         assert types["id"] == "integer"
         assert types["name"].startswith("varchar(")
@@ -145,7 +145,7 @@ class TestAnalyzeCsvTypes:
             writer = csv.DictWriter(f, fieldnames=["id", "name"])
             writer.writeheader()
 
-        types = analyze_csv_types(csv_file)
+        types = analyze_tabular_file_types(csv_file)
 
         # Empty columns should default to text
         assert types["id"] == "text"
@@ -161,7 +161,7 @@ class TestAnalyzeCsvTypes:
             writer.writerow({"id": "2", "value": ""})
             writer.writerow({"id": "3", "value": "20"})
 
-        types = analyze_csv_types(csv_file)
+        types = analyze_tabular_file_types(csv_file)
 
         assert types["id"] == "integer"
         assert types["value"] == "integer"  # Should ignore empty values
