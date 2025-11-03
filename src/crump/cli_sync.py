@@ -115,32 +115,32 @@ def sync(
 
     Examples:
         # Sync CSV file with explicit job name
-        crump sync data.csv crump_config.yaml --job my_job --db-url postgresql://localhost/mydb
+        crump sync data.csv crump_config.yml --job my_job --db-url postgresql://localhost/mydb
 
         # Sync Parquet file
-        crump sync data.parquet crump_config.yaml --job my_job --db-url postgresql://localhost/mydb
+        crump sync data.parquet crump_config.yml --job my_job --db-url postgresql://localhost/mydb
 
         # Sync with auto-detected job (when config has only one job)
-        crump sync data.csv crump_config.yaml --db-url postgresql://localhost/mydb
+        crump sync data.csv crump_config.yml --db-url postgresql://localhost/mydb
 
         # Sync a CDF file (extracts to CSV automatically)
-        crump sync data.cdf crump_config.yaml --job my_job --db-url postgresql://localhost/mydb
+        crump sync data.cdf crump_config.yml --job my_job --db-url postgresql://localhost/mydb
 
         # Sync CDF with limited records (useful for testing)
-        crump sync data.cdf crump_config.yaml --job my_job --db-url postgresql://localhost/mydb --max-records 200
+        crump sync data.cdf crump_config.yml --job my_job --db-url postgresql://localhost/mydb --max-records 200
 
         # Using environment variable
         export DATABASE_URL=postgresql://localhost/mydb
-        crump sync data.parquet crump_config.yaml --job my_job
+        crump sync data.parquet crump_config.yml --job my_job
 
         # Dry-run mode to preview changes
-        crump sync data.parquet crump_config.yaml --job my_job --dry-run
+        crump sync data.parquet crump_config.yml --job my_job --dry-run
 
         # Dry-run with limited records from CDF and auto-detected job
-        crump sync data.cdf crump_config.yaml --dry-run --max-records 100
+        crump sync data.cdf crump_config.yml --dry-run --max-records 100
 
         # Enable history tracking
-        crump sync data.parquet crump_config.yaml --job my_job --history
+        crump sync data.parquet crump_config.yml --job my_job --history
     """
     temp_dir: Path | None = None
     temp_csv_files: list[Path] = []

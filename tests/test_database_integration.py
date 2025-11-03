@@ -35,7 +35,7 @@ class TestDatabaseIntegration:
         )
 
         # Create config file
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         create_config_file(
             config_file, "sync_users", "users", {"user_id": "id"}, {"name": "full_name"}
         )
@@ -87,7 +87,7 @@ class TestDatabaseIntegration:
             ],
         )
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         create_config_file(config_file, "sync_products", "products", {"product_id": "id"})
 
         config = CrumpConfig.from_yaml(config_file)
@@ -118,7 +118,7 @@ class TestDatabaseIntegration:
         # First version of data
         create_csv_file(csv_file, ["id", "value"], [{"id": "1", "value": "original"}])
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         create_config_file(config_file, "test_upsert", "test_data", {"id": "id"})
 
         config = CrumpConfig.from_yaml(config_file)
@@ -148,7 +148,7 @@ class TestDatabaseIntegration:
             writer.writeheader()
             writer.writerow({"id": "1"})
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   bad_job:
@@ -176,7 +176,7 @@ jobs:
             writer.writerow({"sale_id": "2", "amount": "200"})
 
         # Create config with filename_to_column
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text(r"""
 jobs:
   daily_sales:
@@ -231,7 +231,7 @@ jobs:
             writer.writerow({"id": "2", "value": "B"})
             writer.writerow({"id": "3", "value": "C"})
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text(r"""
 jobs:
   daily_data:
@@ -280,7 +280,7 @@ jobs:
 
     def test_delete_stale_records_preserves_other_dates(self, tmp_path: Path, db_url: str) -> None:
         """Test that deleting stale records only affects matching date with filename_to_column."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text(r"""
 jobs:
   daily_data:
@@ -351,7 +351,7 @@ jobs:
 
     def test_sync_with_typed_columns(self, tmp_path: Path, db_url: str) -> None:
         """Test syncing with explicit data types for columns."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text(r"""
 jobs:
   typed_data:
@@ -404,7 +404,7 @@ jobs:
 
     def test_schema_evolution_add_columns(self, tmp_path: Path, db_url: str) -> None:
         """Test that new columns are automatically added to existing tables."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
 
         # Initial sync with 2 columns
         config_file.write_text(r"""
@@ -682,7 +682,7 @@ jobs:
             writer.writerow({"obs_id": "1", "measurement": "42.5"})
             writer.writerow({"obs_id": "2", "measurement": "38.2"})
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text(r"""
 jobs:
   obs_data:
@@ -756,7 +756,7 @@ jobs:
             writer.writeheader()
             writer.writerow({"record_id": "1", "value": "test"})
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text(r"""
 jobs:
   versioned_data:
@@ -804,7 +804,7 @@ jobs:
         self, tmp_path: Path, db_url: str
     ) -> None:
         """Test stale record deletion using compound key from filename values."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text(r"""
 jobs:
   mission_data:
@@ -893,7 +893,7 @@ jobs:
         self, tmp_path: Path, db_url: str
     ) -> None:
         """Test stale record deletion using compound key from filename values."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text(r"""
 jobs:
   mission_data:
@@ -989,7 +989,7 @@ class TestSamplePercentage:
         create_csv_file(csv_file, ["id", "value"], rows)
 
         # Create config with 10% sampling
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_sample:
@@ -1031,7 +1031,7 @@ jobs:
         create_csv_file(csv_file, ["id", "value"], rows)
 
         # Create config with 50% sampling
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_sample:
@@ -1069,7 +1069,7 @@ jobs:
         create_csv_file(csv_file, ["id", "value"], rows)
 
         # Create config with 100% sampling
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_sample:
@@ -1101,7 +1101,7 @@ jobs:
         create_csv_file(csv_file, ["id", "value"], rows)
 
         # Create config without sample_percentage
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_sample:
@@ -1133,7 +1133,7 @@ jobs:
         create_csv_file(csv_file, ["id", "value"], rows)
 
         # Create config with 10% sampling
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_sample:
@@ -1175,7 +1175,7 @@ class TestColumnLookup:
         create_csv_file(csv_file, ["user_id", "name", "status"], rows)
 
         # Create config with lookup
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_lookup:
@@ -1224,7 +1224,7 @@ jobs:
         create_csv_file(csv_file, ["user_id", "status"], rows)
 
         # Create config with lookup
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_lookup:
@@ -1271,7 +1271,7 @@ jobs:
         create_csv_file(csv_file, ["product_id", "name", "size"], rows)
 
         # Create config with lookup for size expansion
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_lookup:
@@ -1321,7 +1321,7 @@ jobs:
         create_csv_file(csv_file, ["order_id", "status", "priority"], rows)
 
         # Create config with lookups for both columns
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_lookup:
@@ -1380,7 +1380,7 @@ class TestCustomFunctions:
         create_csv_file(csv_file, ["id", "consumed", "total_available"], rows)
 
         # Create config with expression for percentage calculation
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_expression:
@@ -1428,7 +1428,7 @@ jobs:
         create_csv_file(csv_file, ["id", "consumed", "total_available"], rows)
 
         # Create config with external function
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_function:
@@ -1475,7 +1475,7 @@ jobs:
         create_csv_file(csv_file, ["id", "first_name", "last_name"], rows)
 
         # Create config with external function for concatenation
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_concat:
@@ -1536,7 +1536,7 @@ jobs:
         )
 
         # Create config with multiple custom functions
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_multi:
@@ -1589,7 +1589,7 @@ jobs:
         create_csv_file(csv_file, ["id", "consumed", "total_available"], rows)
 
         # Create config with expression
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_dryrun:
@@ -1631,7 +1631,7 @@ jobs:
         create_csv_file(csv_file, ["id", "temperature"], rows)
 
         # Create config with expression to convert Celsius to Fahrenheit
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_named:
@@ -1674,7 +1674,7 @@ jobs:
         create_csv_file(csv_file, ["id", "temperature"], rows)
 
         # Create config with external function
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_named_func:
@@ -1717,7 +1717,7 @@ jobs:
         create_csv_file(csv_file, ["id", "raw_value"], rows)
 
         # Create config with polynomial calibration
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_poly:

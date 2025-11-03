@@ -203,7 +203,7 @@ class TestHistoryIntegration:
             csv_file, ["id", "name"], [{"id": "1", "name": "Alice"}, {"id": "2", "name": "Bob"}]
         )
 
-        config_file = tmp_path / "config.yaml"
+        config_file = tmp_path / "config.yml"
         create_config_file(config_file, "test_job", "test_table", {"id": "id"})
 
         config = CrumpConfig.from_yaml(config_file)
@@ -240,7 +240,7 @@ class TestHistoryIntegration:
         csv_file = tmp_path / "data.csv"
         create_csv_file(csv_file, ["id", "name"], [{"id": "1", "name": "Alice"}])
 
-        config_file = tmp_path / "config.yaml"
+        config_file = tmp_path / "config.yml"
         create_config_file(config_file, "test_job", "test_table", {"id": "id"})
 
         config = CrumpConfig.from_yaml(config_file)
@@ -260,7 +260,7 @@ class TestHistoryIntegration:
         csv_file = tmp_path / "data.csv"
         create_csv_file(csv_file, ["id", "name"], [{"id": "1", "name": "Alice"}])
 
-        config_file = tmp_path / "config.yaml"
+        config_file = tmp_path / "config.yml"
         create_config_file(config_file, "test_job", "test_table", {"id": "id"})
 
         config = CrumpConfig.from_yaml(config_file)
@@ -296,7 +296,7 @@ class TestHistoryIntegration:
         )
 
         # Create config with filename extraction for deletion tracking
-        config_file = tmp_path / "config.yaml"
+        config_file = tmp_path / "config.yml"
         config_file.write_text(
             """
 jobs:
@@ -341,7 +341,7 @@ jobs:
         csv_file = tmp_path / "data.csv"
         create_csv_file(csv_file, ["id", "name"], [{"id": "1", "name": "Alice"}])
 
-        config_file = tmp_path / "config.yaml"
+        config_file = tmp_path / "config.yml"
         create_config_file(config_file, "test_job", "test_table", {"id": "id"})
 
         config = CrumpConfig.from_yaml(config_file)
@@ -365,7 +365,7 @@ jobs:
         csv_file = tmp_path / "data.csv"
         create_csv_file(csv_file, ["id", "name"], [{"id": "1", "name": "Alice"}])
 
-        config_file = tmp_path / "config.yaml"
+        config_file = tmp_path / "config.yml"
         create_config_file(config_file, "test_job", "test_table", {"id": "id"})
 
         config = CrumpConfig.from_yaml(config_file)
@@ -387,7 +387,7 @@ jobs:
     def test_multiple_sync_history_entries(self, tmp_path: Path, db_url: str) -> None:
         """Test that multiple syncs create multiple history entries."""
         csv_file = tmp_path / "data.csv"
-        config_file = tmp_path / "config.yaml"
+        config_file = tmp_path / "config.yml"
         create_config_file(config_file, "test_job", "test_table", {"id": "id"})
 
         config = CrumpConfig.from_yaml(config_file)
@@ -409,7 +409,7 @@ jobs:
         # Create CSV with invalid data that will cause an error
         csv_file.write_text("id,name\n1,Alice\n")
 
-        config_file = tmp_path / "config.yaml"
+        config_file = tmp_path / "config.yml"
         # Create config that references a column that doesn't exist
         config_file.write_text(
             """

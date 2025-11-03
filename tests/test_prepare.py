@@ -90,7 +90,7 @@ class TestPrepareCommandIntegration:
 
         from crump.cli_prepare import prepare
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         runner = CliRunner()
 
         result = runner.invoke(prepare, [str(sample_csv), "--config", str(config_file)])
@@ -113,7 +113,7 @@ class TestPrepareCommandIntegration:
 
         from crump.cli_prepare import prepare
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         runner = CliRunner()
 
         result = runner.invoke(
@@ -138,7 +138,7 @@ class TestPrepareCommandIntegration:
 
         from crump.cli_prepare import prepare
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         runner = CliRunner()
 
         result = runner.invoke(
@@ -164,7 +164,7 @@ class TestPrepareCommandIntegration:
 
         from crump.cli_prepare import prepare
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         runner = CliRunner()
 
         result = runner.invoke(
@@ -181,7 +181,7 @@ class TestPrepareCommandIntegration:
 
         from crump.cli_prepare import prepare
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         runner = CliRunner()
 
         # First run
@@ -294,7 +294,7 @@ class TestPrepareWithFilenameDetection:
         from crump.cli_prepare import prepare
         from crump.config import CrumpConfig
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         runner = CliRunner()
 
         result = runner.invoke(prepare, [str(dated_csv), "--config", str(config_file)])
@@ -322,7 +322,7 @@ class TestPrepareWithFilenameDetection:
 
         # sample_csv is from parent class fixture: "test_data_2024.csv"
         # This should match YYYYMMDD pattern (2024)
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         runner = CliRunner()
 
         result = runner.invoke(prepare, [str(sample_csv), "--config", str(config_file)])
@@ -370,7 +370,7 @@ class TestPrepareWithCDFFiles:
         if not sample_cdf.exists():
             pytest.skip("Sample CDF file not found")
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         runner = CliRunner()
 
         result = runner.invoke(prepare, [str(sample_cdf), "--config", str(config_file)])
@@ -403,7 +403,7 @@ class TestPrepareWithCDFFiles:
         csv_file = tmp_path / "test.csv"
         csv_file.write_text("id,value\n1,100\n2,200\n")
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         runner = CliRunner()
 
         result = runner.invoke(
@@ -429,7 +429,7 @@ class TestPrepareWithCDFFiles:
         if not sample_cdf.exists():
             pytest.skip("Sample CDF file not found")
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         runner = CliRunner()
 
         # First run
@@ -450,7 +450,7 @@ class TestPrepareWithCDFFiles:
         unsupported_file = tmp_path / "test.txt"
         unsupported_file.write_text("some text")
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         runner = CliRunner()
 
         result = runner.invoke(prepare, [str(unsupported_file), "--config", str(config_file)])
@@ -468,7 +468,7 @@ class TestPrepareWithCDFFiles:
         fake_cdf = tmp_path / "fake.cdf"
         fake_cdf.write_text("not a real CDF file")
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         runner = CliRunner()
 
         result = runner.invoke(prepare, [str(fake_cdf), "--config", str(config_file)])
@@ -580,7 +580,7 @@ class TestCDFEndToEndWorkflow:
         assert len(csv_files) > 0, "No CSV files were extracted"
 
         # Step 2: Run prepare command on extracted CSV files to generate config
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         csv_file_args = [str(f) for f in csv_files]
         prepare_result = runner.invoke(prepare, csv_file_args + ["--config", str(config_file)])
 
@@ -665,7 +665,7 @@ class TestCDFEndToEndWorkflow:
         assert len(csv_files) > 0
 
         # Prepare config from extracted CSVs
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         csv_file_args = [str(f) for f in csv_files]
         prepare_result = runner.invoke(prepare, csv_file_args + ["--config", str(config_file)])
         assert prepare_result.exit_code == 0

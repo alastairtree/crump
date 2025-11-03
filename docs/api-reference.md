@@ -24,7 +24,7 @@ from pathlib import Path
 from crump import sync_file_to_db, CrumpConfig
 
 # Load configuration
-config = CrumpConfig.from_yaml(Path("crump_config.yaml"))
+config = CrumpConfig.from_yaml(Path("crump_config.yml"))
 job = config.get_job("my_job")
 
 # Sync a tabular file (CSV or Parquet)
@@ -77,7 +77,7 @@ def sync_file_to_db(
 from pathlib import Path
 from crump import sync_file_to_db, CrumpConfig
 
-config = CrumpConfig.from_yaml(Path("crump_config.yaml"))
+config = CrumpConfig.from_yaml(Path("crump_config.yml"))
 job = config.get_job("users_sync")
 
 # Sync CSV file
@@ -137,7 +137,7 @@ def sync_csv_to_db_dry_run(
 from pathlib import Path
 from crump import sync_csv_to_db_dry_run, CrumpConfig
 
-config = CrumpConfig.from_yaml(Path("crump_config.yaml"))
+config = CrumpConfig.from_yaml(Path("crump_config.yml"))
 job = config.get_job("my_job")
 
 summary = sync_csv_to_db_dry_run(
@@ -260,7 +260,7 @@ from pathlib import Path
 from crump import CrumpConfig
 
 # Load from file
-config = CrumpConfig.from_yaml(Path("crump_config.yaml"))
+config = CrumpConfig.from_yaml(Path("crump_config.yml"))
 
 # Get a job
 job = config.get_job("my_job")
@@ -277,7 +277,7 @@ job = CrumpJob(
     id_mapping=[ColumnMapping("user_id", "id", "integer")]
 )
 new_config.add_or_update_job(job)
-new_config.save_to_yaml(Path("new_crump_config.yaml"))
+new_config.save_to_yaml(Path("new_crump_config.yml"))
 ```
 
 ### CrumpJob
@@ -501,7 +501,7 @@ job = CrumpJob(
 # Create config and save
 config = CrumpConfig(jobs={})
 config.add_or_update_job(job)
-config.save_to_yaml(Path("crump_config.yaml"))
+config.save_to_yaml(Path("crump_config.yml"))
 
 # Extract filename values
 filename_values = job.filename_to_column.extract_values_from_filename(csv_path)
@@ -537,7 +537,7 @@ from pathlib import Path
 from crump import sync_csv_to_db, CrumpConfig
 
 try:
-    config = CrumpConfig.from_yaml(Path("crump_config.yaml"))
+    config = CrumpConfig.from_yaml(Path("crump_config.yml"))
     job = config.get_job("my_job")
 
     if not job:

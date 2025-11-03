@@ -12,7 +12,7 @@ class TestConfigParsing:
 
     def test_load_valid_config(self, tmp_path: Path) -> None:
         """Test loading a valid configuration file."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -39,7 +39,7 @@ jobs:
 
     def test_config_with_no_columns(self, tmp_path: Path) -> None:
         """Test config where no specific columns are listed (sync all)."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   sync_all:
@@ -55,14 +55,14 @@ jobs:
 
     def test_config_file_not_found(self, tmp_path: Path) -> None:
         """Test error when config file doesn't exist."""
-        config_file = tmp_path / "nonexistent.yaml"
+        config_file = tmp_path / "nonexistent.yml"
 
         with pytest.raises(FileNotFoundError, match="Config file not found"):
             CrumpConfig.from_yaml(config_file)
 
     def test_config_missing_jobs(self, tmp_path: Path) -> None:
         """Test error when config file doesn't have jobs section."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("other_section: value")
 
         with pytest.raises(ValueError, match="must contain 'jobs' section"):
@@ -70,7 +70,7 @@ jobs:
 
     def test_config_missing_target_table(self, tmp_path: Path) -> None:
         """Test error when job is missing target_table."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   bad_job:
@@ -83,7 +83,7 @@ jobs:
 
     def test_config_missing_id_mapping(self, tmp_path: Path) -> None:
         """Test error when job is missing id_mapping."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   bad_job:
@@ -95,7 +95,7 @@ jobs:
 
     def test_get_nonexistent_job(self, tmp_path: Path) -> None:
         """Test getting a job that doesn't exist."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   job1:
@@ -114,7 +114,7 @@ class TestColumnDataTypes:
 
     def test_config_with_data_types(self, tmp_path: Path) -> None:
         """Test config with explicit data types."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   typed_job:
@@ -168,7 +168,7 @@ jobs:
 
     def test_extended_format_without_type(self, tmp_path: Path) -> None:
         """Test extended format with db_column but no type."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -193,7 +193,7 @@ jobs:
 
     def test_invalid_extended_format(self, tmp_path: Path) -> None:
         """Test that extended format without db_column raises error."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -214,7 +214,7 @@ class TestIdColumnMatchers:
 
     def test_config_with_id_column_matchers(self, tmp_path: Path) -> None:
         """Test loading config with id_column_matchers."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 id_column_matchers:
   - customer_id
@@ -236,7 +236,7 @@ jobs:
 
     def test_config_without_id_column_matchers(self, tmp_path: Path) -> None:
         """Test loading config without id_column_matchers (uses defaults)."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -253,7 +253,7 @@ jobs:
 
     def test_config_invalid_id_column_matchers(self, tmp_path: Path) -> None:
         """Test that non-list id_column_matchers raises error."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 id_column_matchers: "not a list"
 jobs:
@@ -279,7 +279,7 @@ jobs:
 
         config = CrumpConfig(jobs={"test_job": job}, id_column_matchers=["custom_id", "record_id"])
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config.save_to_yaml(config_file)
 
         # Reload and verify
@@ -292,7 +292,7 @@ class TestCompoundPrimaryKeys:
 
     def test_config_with_compound_primary_key(self, tmp_path: Path) -> None:
         """Test loading config with compound primary key."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -328,7 +328,7 @@ jobs:
         )
 
         config = CrumpConfig(jobs={"test_job": job})
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config.save_to_yaml(config_file)
 
         # Reload and verify
@@ -345,7 +345,7 @@ class TestIndexes:
 
     def test_config_with_single_column_index(self, tmp_path: Path) -> None:
         """Test loading config with single-column index."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -372,7 +372,7 @@ jobs:
 
     def test_config_with_multi_column_index(self, tmp_path: Path) -> None:
         """Test loading config with multi-column index."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -405,7 +405,7 @@ jobs:
 
     def test_config_with_multiple_indexes(self, tmp_path: Path) -> None:
         """Test loading config with multiple indexes."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -451,7 +451,7 @@ jobs:
         )
 
         config = CrumpConfig(jobs={"test_job": job})
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config.save_to_yaml(config_file)
 
         # Reload and verify
@@ -559,7 +559,7 @@ class TestFilenameToColumn:
 
     def test_config_with_filename_to_column_template(self, tmp_path: Path) -> None:
         """Test loading config with filename_to_column using template."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -602,7 +602,7 @@ jobs:
 
     def test_config_with_filename_to_column_regex(self, tmp_path: Path) -> None:
         """Test loading config with filename_to_column using regex."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text(r"""
 jobs:
   test_job:
@@ -630,7 +630,7 @@ jobs:
 
     def test_config_with_both_template_and_regex_error(self, tmp_path: Path) -> None:
         """Test that config with both template and regex raises error."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text(r"""
 jobs:
   test_job:
@@ -650,7 +650,7 @@ jobs:
 
     def test_config_with_neither_template_nor_regex_error(self, tmp_path: Path) -> None:
         """Test that config without template or regex raises error."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -692,7 +692,7 @@ jobs:
         )
 
         config = CrumpConfig(jobs={"test_job": job})
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config.save_to_yaml(config_file)
 
         # Reload and verify
@@ -712,7 +712,7 @@ class TestSamplePercentage:
 
     def test_config_with_sample_percentage(self, tmp_path: Path) -> None:
         """Test loading config with sample_percentage."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -731,7 +731,7 @@ jobs:
 
     def test_config_without_sample_percentage(self, tmp_path: Path) -> None:
         """Test loading config without sample_percentage (defaults to None)."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -749,7 +749,7 @@ jobs:
 
     def test_config_with_sample_percentage_100(self, tmp_path: Path) -> None:
         """Test loading config with sample_percentage of 100 (sync all rows)."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -766,7 +766,7 @@ jobs:
 
     def test_config_with_sample_percentage_float(self, tmp_path: Path) -> None:
         """Test loading config with float sample_percentage."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -783,7 +783,7 @@ jobs:
 
     def test_config_sample_percentage_out_of_range_high(self, tmp_path: Path) -> None:
         """Test that sample_percentage > 100 raises error."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -798,7 +798,7 @@ jobs:
 
     def test_config_sample_percentage_out_of_range_low(self, tmp_path: Path) -> None:
         """Test that sample_percentage < 0 raises error."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -813,7 +813,7 @@ jobs:
 
     def test_config_sample_percentage_invalid_type(self, tmp_path: Path) -> None:
         """Test that non-numeric sample_percentage raises error."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -839,7 +839,7 @@ jobs:
         )
 
         config = CrumpConfig(jobs={"test_job": job})
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config.save_to_yaml(config_file)
 
         # Reload and verify
@@ -860,7 +860,7 @@ jobs:
         )
 
         config = CrumpConfig(jobs={"test_job": job})
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config.save_to_yaml(config_file)
 
         # Read file and check sample_percentage is not present
@@ -880,7 +880,7 @@ jobs:
         )
 
         config = CrumpConfig(jobs={"test_job": job})
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config.save_to_yaml(config_file)
 
         # Read file and check sample_percentage is not present (since 100 is default)
@@ -893,7 +893,7 @@ class TestColumnLookup:
 
     def test_config_with_lookup(self, tmp_path: Path) -> None:
         """Test loading config with lookup dictionary."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -962,7 +962,7 @@ jobs:
 
     def test_config_with_mixed_types_in_lookup(self, tmp_path: Path) -> None:
         """Test lookup with different value types (string to int, string to string, etc.)."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -999,7 +999,7 @@ jobs:
 
     def test_config_lookup_invalid_type(self, tmp_path: Path) -> None:
         """Test that non-dict lookup raises error."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -1034,7 +1034,7 @@ jobs:
         )
 
         config = CrumpConfig(jobs={"test_job": job})
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config.save_to_yaml(config_file)
 
         # Reload and verify
@@ -1058,7 +1058,7 @@ jobs:
         )
 
         config = CrumpConfig(jobs={"test_job": job})
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config.save_to_yaml(config_file)
 
         # Read file and check lookup is not present
@@ -1071,7 +1071,7 @@ class TestCustomFunctions:
 
     def test_load_config_with_expression(self, tmp_path: Path) -> None:
         """Test loading config with inline expression."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -1105,7 +1105,7 @@ jobs:
 
     def test_load_config_with_function(self, tmp_path: Path) -> None:
         """Test loading config with external function reference."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -1224,7 +1224,7 @@ jobs:
 
     def test_invalid_expression_type(self, tmp_path: Path) -> None:
         """Test that non-string expression raises error."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -1243,7 +1243,7 @@ jobs:
 
     def test_invalid_function_type(self, tmp_path: Path) -> None:
         """Test that non-string function raises error."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -1262,7 +1262,7 @@ jobs:
 
     def test_invalid_input_columns_type(self, tmp_path: Path) -> None:
         """Test that non-list input_columns raises error."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -1299,7 +1299,7 @@ jobs:
         )
 
         config = CrumpConfig(jobs={"test_job": job})
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config.save_to_yaml(config_file)
 
         # Reload and verify
@@ -1332,7 +1332,7 @@ jobs:
         )
 
         config = CrumpConfig(jobs={"test_job": job})
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config.save_to_yaml(config_file)
 
         # Reload and verify
@@ -1348,7 +1348,7 @@ jobs:
 
     def test_load_config_with_named_column_transformation(self, tmp_path: Path) -> None:
         """Test loading config with expression on named CSV column."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:
@@ -1395,7 +1395,7 @@ jobs:
         )
 
         config = CrumpConfig(jobs={"test_job": job})
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config.save_to_yaml(config_file)
 
         # Reload and verify
@@ -1412,7 +1412,7 @@ jobs:
 
     def test_load_config_with_polynomial_transformation(self, tmp_path: Path) -> None:
         """Test loading config with polynomial transformation."""
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   test_job:

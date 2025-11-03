@@ -26,7 +26,7 @@ You can either create a configuration file manually or use the `prepare` command
 === "Automatic (Recommended)"
 
     ```bash
-    crump prepare users.csv --config crump_config.yaml --job users_sync
+    crump prepare users.csv --config crump_config.yml --job users_sync
     ```
 
     This will:
@@ -38,7 +38,7 @@ You can either create a configuration file manually or use the `prepare` command
 
 === "Manual"
 
-    Create `crump_config.yaml`:
+    Create `crump_config.yml`:
 
     ```yaml
     jobs:
@@ -62,7 +62,7 @@ export DATABASE_URL="sqlite:///test.db"
 Before syncing, you can preview what changes will be made:
 
 ```bash
-crump sync users.csv crump_config.yaml --job users_sync --dry-run
+crump sync users.csv crump_config.yml --job users_sync --dry-run
 ```
 
 This shows:
@@ -75,7 +75,7 @@ This shows:
 ## Step 6: Sync Your Data
 
 ```bash
-crump sync users.csv crump_config.yaml --job users_sync
+crump sync users.csv crump_config.yml --job users_sync
 ```
 
 You should see output like:
@@ -120,7 +120,7 @@ The sync is **idempotent** - you can run it multiple times safely:
 # Change Alice's email to alice.new@example.com
 
 # Run sync again
-crump sync users.csv crump_config.yaml --job users_sync
+crump sync users.csv crump_config.yml --job users_sync
 ```
 
 The existing rows are updated, no duplicates are created.

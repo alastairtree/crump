@@ -46,7 +46,7 @@ class TestSyncCommand:
         """Test sync with nonexistent CSV file fails."""
         from tests.test_helpers import create_config_file
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         create_config_file(config_file, "test", "test", {"id": "id"})
 
         nonexistent = tmp_path / "doesnotexist.csv"
@@ -70,7 +70,7 @@ class TestSyncCommand:
         csv_file = tmp_path / "test.csv"
         csv_file.touch()
 
-        nonexistent_config = tmp_path / "nonexistent.yaml"
+        nonexistent_config = tmp_path / "nonexistent.yml"
 
         result = cli_runner.invoke(
             main,
@@ -93,7 +93,7 @@ class TestSyncCommand:
         csv_file = tmp_path / "test.csv"
         create_csv_file(csv_file, ["id", "value"], [{"id": "1", "value": "test"}])
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         create_config_file(config_file, "real_job", "test", {"id": "id"})
 
         result = cli_runner.invoke(
@@ -119,7 +119,7 @@ class TestSyncCommand:
         csv_file = tmp_path / "test.csv"
         csv_file.touch()
 
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         create_config_file(config_file, "test", "test", {"id": "id"})
 
         result = cli_runner.invoke(main, ["sync", str(csv_file), str(config_file), "test"])
@@ -270,7 +270,7 @@ class TestDryRunCommand:
         )
 
         # Create a config file
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         create_config_file(config_file, "test_job", "test_table", {"id": "id"})
 
         # Create an SQLite database URL
@@ -315,7 +315,7 @@ class TestDryRunCommand:
         create_csv_file(csv_file, ["id", "name"], [{"id": "1", "name": "Alice"}])
 
         # Create a config file
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         create_config_file(config_file, "test_job", "test_table", {"id": "id"})
 
         # Create an SQLite database URL
@@ -370,7 +370,7 @@ class TestHistoryCommand:
             ],
         )
 
-        config_file = tmp_path / "config.yaml"
+        config_file = tmp_path / "config.yml"
         create_config_file(config_file, "test_job", "test_table", {"id": "id"})
 
         # Run sync with --history flag
@@ -423,7 +423,7 @@ class TestHistoryCommand:
         csv_file = tmp_path / "data.csv"
         create_csv_file(csv_file, ["id", "name"], [{"id": "1", "name": "Alice"}])
 
-        config_file = tmp_path / "config.yaml"
+        config_file = tmp_path / "config.yml"
         create_config_file(config_file, "test_job", "test_table", {"id": "id"})
 
         # Run sync WITHOUT --history flag
@@ -471,7 +471,7 @@ class TestHistoryCommand:
         csv_file.write_text("id,name\n1,Alice\n")
 
         # Create config with invalid column mapping
-        config_file = tmp_path / "config.yaml"
+        config_file = tmp_path / "config.yml"
         config_file.write_text(
             """
 jobs:
@@ -526,7 +526,7 @@ jobs:
         csv_file = tmp_path / "data.csv"
         create_csv_file(csv_file, ["id", "name"], [{"id": "1", "name": "Alice"}])
 
-        config_file = tmp_path / "config.yaml"
+        config_file = tmp_path / "config.yml"
         create_config_file(config_file, "test_job", "test_table", {"id": "id"})
 
         # Run sync with --dry-run AND --history
@@ -568,7 +568,7 @@ jobs:
         from tests.test_helpers import create_config_file, create_csv_file
 
         csv_file = tmp_path / "data.csv"
-        config_file = tmp_path / "config.yaml"
+        config_file = tmp_path / "config.yml"
         create_config_file(config_file, "test_job", "test_table", {"id": "id"})
 
         # First sync - creates table (schema change)
@@ -628,7 +628,7 @@ jobs:
         from tests.db_test_utils import execute_query
         from tests.test_helpers import create_config_file, create_csv_file
 
-        config_file = tmp_path / "config.yaml"
+        config_file = tmp_path / "config.yml"
         create_config_file(config_file, "test_job", "test_table", {"id": "id"})
 
         # Perform 3 syncs with different files

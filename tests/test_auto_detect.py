@@ -9,7 +9,7 @@ from crump.config import CrumpConfig
 
 def test_get_job_or_auto_detect_single_job(tmp_path: Path) -> None:
     """Test auto-detection when config has exactly one job."""
-    config_file = tmp_path / "crump_config.yaml"
+    config_file = tmp_path / "crump_config.yml"
     config_file.write_text("""
 jobs:
   my_job:
@@ -32,7 +32,7 @@ jobs:
 
 def test_get_job_or_auto_detect_explicit_job_name(tmp_path: Path) -> None:
     """Test explicit job name works even with single job."""
-    config_file = tmp_path / "crump_config.yaml"
+    config_file = tmp_path / "crump_config.yml"
     config_file.write_text("""
 jobs:
   my_job:
@@ -55,7 +55,7 @@ jobs:
 
 def test_get_job_or_auto_detect_multiple_jobs_requires_name(tmp_path: Path) -> None:
     """Test that multiple jobs require explicit job name."""
-    config_file = tmp_path / "crump_config.yaml"
+    config_file = tmp_path / "crump_config.yml"
     config_file.write_text("""
 jobs:
   job1:
@@ -88,7 +88,7 @@ jobs:
 
 def test_get_job_or_auto_detect_nonexistent_job(tmp_path: Path) -> None:
     """Test that nonexistent job returns None."""
-    config_file = tmp_path / "crump_config.yaml"
+    config_file = tmp_path / "crump_config.yml"
     config_file.write_text("""
 jobs:
   my_job:
@@ -108,7 +108,7 @@ jobs:
 
 def test_get_job_or_auto_detect_empty_config(tmp_path: Path) -> None:
     """Test that empty config returns None."""
-    config_file = tmp_path / "crump_config.yaml"
+    config_file = tmp_path / "crump_config.yml"
     config_file.write_text("jobs: {}")
 
     config = CrumpConfig.from_yaml(config_file)

@@ -31,7 +31,7 @@ class TestCDFEndToEndWorkflow:
         runner = CliRunner()
 
         # Step 1: Prepare config from CDF file
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         prepare_result = runner.invoke(prepare, [str(sample_cdf), "--config", str(config_file)])
         assert prepare_result.exit_code == 0, f"Prepare failed: {prepare_result.output}"
         assert config_file.exists(), "Config file was not created"
@@ -105,7 +105,7 @@ class TestCDFEndToEndWorkflow:
         runner = CliRunner()
 
         # Prepare config from CDF
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         prepare_result = runner.invoke(prepare, [str(sample_cdf), "--config", str(config_file)])
         assert prepare_result.exit_code == 0
 

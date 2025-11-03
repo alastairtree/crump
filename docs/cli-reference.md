@@ -53,50 +53,50 @@ crump sync FILE_PATH CONFIG JOB [OPTIONS]
 **Basic CSV sync:**
 
 ```bash
-crump sync data.csv crump_config.yaml my_job --db-url postgresql://localhost/mydb
+crump sync data.csv crump_config.yml my_job --db-url postgresql://localhost/mydb
 ```
 
 **Sync Parquet file:**
 
 ```bash
-crump sync data.parquet crump_config.yaml my_job --db-url postgresql://localhost/mydb
+crump sync data.parquet crump_config.yml my_job --db-url postgresql://localhost/mydb
 ```
 
 **Sync CDF file (automatic extraction):**
 
 ```bash
-crump sync science_data.cdf crump_config.yaml vectors --db-url postgresql://localhost/mydb
+crump sync science_data.cdf crump_config.yml vectors --db-url postgresql://localhost/mydb
 ```
 
 **Sync CDF with limited records (for testing):**
 
 ```bash
-crump sync science_data.cdf crump_config.yaml vectors --db-url postgresql://localhost/mydb --max-records 200
+crump sync science_data.cdf crump_config.yml vectors --db-url postgresql://localhost/mydb --max-records 200
 ```
 
 **Using environment variable:**
 
 ```bash
 export DATABASE_URL=postgresql://localhost/mydb
-crump sync data.csv crump_config.yaml my_job
+crump sync data.csv crump_config.yml my_job
 ```
 
 **Dry-run mode:**
 
 ```bash
-crump sync data.csv crump_config.yaml my_job --dry-run
+crump sync data.csv crump_config.yml my_job --dry-run
 ```
 
 **Dry-run CDF with limited records:**
 
 ```bash
-crump sync data.cdf crump_config.yaml my_job --dry-run --max-records 100
+crump sync data.cdf crump_config.yml my_job --dry-run --max-records 100
 ```
 
 **Enable history tracking:**
 
 ```bash
-crump sync data.csv crump_config.yaml my_job --history
+crump sync data.csv crump_config.yml my_job --history
 ```
 
 #### Output
@@ -192,31 +192,31 @@ crump prepare FILE_PATH... CONFIG [JOB] [OPTIONS]
 **Auto-generate job name from CSV:**
 
 ```bash
-crump prepare users.csv --config crump_config.yaml
+crump prepare users.csv --config crump_config.yml
 ```
 
 **Prepare CDF file:**
 
 ```bash
-crump prepare science_data.cdf --config crump_config.yaml
+crump prepare science_data.cdf --config crump_config.yml
 ```
 
 **Specify job name:**
 
 ```bash
-crump prepare users.csv --config crump_config.yaml --job my_custom_job
+crump prepare users.csv --config crump_config.yml --job my_custom_job
 ```
 
 **Multiple files (auto-names each):**
 
 ```bash
-crump prepare file1.csv file2.csv --config crump_config.yaml
+crump prepare file1.csv file2.csv --config crump_config.yml
 ```
 
 **Update existing job:**
 
 ```bash
-crump prepare users.csv --config crump_config.yaml --job users_sync --force
+crump prepare users.csv --config crump_config.yml --job users_sync --force
 ```
 
 #### Output
@@ -248,7 +248,7 @@ Analyzing users_2024.csv...
 │ idx_created_at│ created_at │ DESC         │
 └──────────────┴─────────────┴──────────────┘
 
-✓ Created job 'users' in crump_config.yaml
+✓ Created job 'users' in crump_config.yml
   Target table: users
   ID column: user_id → id
   Filename pattern detected: users_[date].csv
@@ -411,25 +411,25 @@ crump extract data.cdf --filename "[SOURCE_FILE]-[VARIABLE_NAME].parquet"
 **Extract with column mapping (same transformations as sync):**
 
 ```bash
-crump extract science_data.cdf --config crump_config.yaml --job vectors_job
+crump extract science_data.cdf --config crump_config.yml --job vectors_job
 ```
 
 **Extract to specific directory with config:**
 
 ```bash
-crump extract data.cdf -o output/ --config crump_config.yaml --job my_job
+crump extract data.cdf -o output/ --config crump_config.yml --job my_job
 ```
 
 **Config-based with limited records:**
 
 ```bash
-crump extract data.cdf --config crump_config.yaml --job my_job --max-records 100
+crump extract data.cdf --config crump_config.yml --job my_job --max-records 100
 ```
 
 **Multiple files with config:**
 
 ```bash
-crump extract *.cdf --config crump_config.yaml --job my_job -o output/
+crump extract *.cdf --config crump_config.yml --job my_job -o output/
 ```
 
 #### Output
@@ -505,16 +505,16 @@ sqlite:///path/to/database.db
 
 ```bash
 # 1. Analyze CSV and create config
-crump prepare data.csv --config crump_config.yaml --job my_job
+crump prepare data.csv --config crump_config.yml --job my_job
 
-# 2. Review generated crump_config.yaml
-cat crump_config.yaml
+# 2. Review generated crump_config.yml
+cat crump_config.yml
 
 # 3. Test with dry-run
-crump sync data.csv crump_config.yaml my_job --dry-run
+crump sync data.csv crump_config.yml my_job --dry-run
 
 # 4. Run actual sync
-crump sync data.csv crump_config.yaml my_job
+crump sync data.csv crump_config.yml my_job
 ```
 
 ### Daily Updates
@@ -524,7 +524,7 @@ crump sync data.csv crump_config.yaml my_job
 export DATABASE_URL="postgresql://localhost/mydb"
 
 # Daily sync (idempotent)
-crump sync sales_$(date +%Y-%m-%d).csv crump_config.yaml daily_sales
+crump sync sales_$(date +%Y-%m-%d).csv crump_config.yml daily_sales
 ```
 
 ### Batch Processing
@@ -532,7 +532,7 @@ crump sync sales_$(date +%Y-%m-%d).csv crump_config.yaml daily_sales
 ```bash
 # Process multiple files
 for file in data/*.csv; do
-  crump sync "$file" crump_config.yaml my_job
+  crump sync "$file" crump_config.yml my_job
 done
 ```
 
@@ -540,13 +540,13 @@ done
 
 ```bash
 # Update existing job with --force
-crump prepare new_data.csv --config crump_config.yaml --job my_job --force
+crump prepare new_data.csv --config crump_config.yml --job my_job --force
 
 # Review changes
-git diff crump_config.yaml
+git diff crump_config.yml
 
 # Test new config
-crump sync new_data.csv crump_config.yaml my_job --dry-run
+crump sync new_data.csv crump_config.yml my_job --dry-run
 ```
 
 ## Troubleshooting

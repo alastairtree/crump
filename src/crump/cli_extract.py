@@ -134,29 +134,29 @@ def extract(
         crump extract *.cdf -o csv_output/
 
         # Extract using config file (applies column mappings and transformations)
-        crump extract data.cdf -o output/ --config crump_config.yaml --job my_job
+        crump extract data.cdf -o output/ --config crump_config.yml --job my_job
 
         # Extract with auto-detected job (when config has only one job)
-        crump extract data.cdf -o output/ --config crump_config.yaml
+        crump extract data.cdf -o output/ --config crump_config.yml
 
         # Extract with config and limited records
-        crump extract data.cdf --config crump_config.yaml --job my_job --max-records 100
+        crump extract data.cdf --config crump_config.yml --job my_job --max-records 100
 
         # Extract with config and append to existing transformed CSV
-        crump extract data1.cdf --config crump_config.yaml --append
-        crump extract data2.cdf --config crump_config.yaml --append
+        crump extract data1.cdf --config crump_config.yml --append
+        crump extract data2.cdf --config crump_config.yml --append
 
         # Extract with config and custom filename template
-        crump extract data.cdf --config crump_config.yaml --filename "processed_[SOURCE_FILE].csv"
+        crump extract data.cdf --config crump_config.yml --filename "processed_[SOURCE_FILE].csv"
 
         # Extract with config, specific variables, and custom filename
-        crump extract data.cdf --config crump_config.yaml -v epoch -v vectors --filename "vectors_[SOURCE_FILE].csv"
+        crump extract data.cdf --config crump_config.yml -v epoch -v vectors --filename "vectors_[SOURCE_FILE].csv"
 
         # Extract to Parquet format instead of CSV
         crump extract data.cdf --parquet
 
         # Extract to Parquet with config
-        crump extract data.cdf --config crump_config.yaml --parquet
+        crump extract data.cdf --config crump_config.yml --parquet
     """
     try:
         # Validate config/job parameters

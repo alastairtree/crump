@@ -136,7 +136,7 @@ def prepare_test_environment(tmp_path: Path) -> dict[str, Path]:
     users_v2_csv.write_text("user_id,name,email,notes\n1,Alice Updated,alice@example.com,Admin\n")
 
     # Create sample config with only my_job (docs will create other jobs)
-    config_yaml = tmp_path / "crump_config.yaml"
+    config_yaml = tmp_path / "crump_config.yml"
     config_yaml.write_text("""
 jobs:
   my_job:
@@ -154,7 +154,7 @@ jobs:
         "data.csv": data_csv,
         "activity_log.csv": activity_log_csv,
         "users_v2.csv": users_v2_csv,
-        "crump_config.yaml": config_yaml,
+        "crump_config.yml": config_yaml,
         "tmp_path": tmp_path,
     }
 
@@ -191,7 +191,7 @@ class TestExecutableDocsPython:
 
                 # Add test file paths to namespace
                 for name, path in test_env.items():
-                    if name.endswith(".csv") or name.endswith(".yaml"):
+                    if name.endswith(".csv") or name.endswith(".yml"):
                         namespace[name.replace(".", "_")] = path
 
                 exec(code, namespace)

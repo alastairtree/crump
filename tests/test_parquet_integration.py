@@ -22,7 +22,7 @@ class TestParquetDatabaseIntegration:
             writer.writerow(["3", "Charlie", "charlie@example.com"])
 
         # Create config file
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   sync_users:
@@ -66,7 +66,7 @@ jobs:
             writer.writerow(["P3", "Tool", 14.50, True])
 
         # Create config file
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   sync_products:
@@ -101,7 +101,7 @@ jobs:
             writer.writerow(["B", "200"])
 
         # Create config file
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   sync_data:
@@ -138,7 +138,7 @@ jobs:
             writer.writerow(["SKU002", 30])
 
         # Create config
-        config_file = tmp_path / "crump_config.yaml"
+        config_file = tmp_path / "crump_config.yml"
         config_file.write_text("""
 jobs:
   sync_inventory:

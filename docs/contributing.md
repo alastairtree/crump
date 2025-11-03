@@ -438,7 +438,7 @@ Sync a CSV file to PostgreSQL.
 from pathlib import Path
 from crump import sync_csv_to_db, CrumpConfig
 
-config = CrumpConfig.from_yaml(Path("crump_config.yaml"))
+config = CrumpConfig.from_yaml(Path("crump_config.yml"))
 job = config.get_job("my_job")
 
 rows = sync_csv_to_db(

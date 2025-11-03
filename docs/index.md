@@ -38,9 +38,9 @@ Examines and syncs CSV, Parquet, and CDF files into PostgreSQL or SQLite databas
 
 ```bash
 # Create a configuration file
-crump prepare users.csv --config crump_config.yaml --job users_sync
+crump prepare users.csv --config crump_config.yml --job users_sync
 
-# Look at the mapping it generated for you in crump_config.yaml and edit as needed. 
+# Look at the mapping it generated for you in crump_config.yml and edit as needed. 
 # Crump has mapped your columns and suggested keys and indexes
 
 # get ready to sync - you db must be available
@@ -49,14 +49,14 @@ export DATABASE_URL="sqlite:///test.db"
 # export DATABASE_URL="postgresql://user:pass@localhost:5432/mydb"
 
 # preview changes first (requires --db-url or DATABASE_URL)
-crump sync users.csv crump_config.yaml --job users_sync --dry-run
+crump sync users.csv crump_config.yml --job users_sync --dry-run
 
 # Sync the file to database
-crump sync users.csv crump_config.yaml --job users_sync
+crump sync users.csv crump_config.yml --job users_sync
 
 # Later that day the v2 of the file arrives
 # Sync the new file, old records from v1 are removed automatically, updates are applied to rows that match based on primary key
-crump sync users_v2.csv crump_config.yaml --job users_sync
+crump sync users_v2.csv crump_config.yml --job users_sync
 ```
 
 ## Use Cases

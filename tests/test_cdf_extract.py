@@ -657,7 +657,7 @@ def test_extract_cdf_to_parquet_with_config(solo_cdf_file: Path, tmp_path: Path)
     from crump.tabular_file import create_reader
 
     # Create config file
-    config_file = tmp_path / "crump_config.yaml"
+    config_file = tmp_path / "crump_config.yml"
     config_file.write_text("""
 jobs:
   mag_data:

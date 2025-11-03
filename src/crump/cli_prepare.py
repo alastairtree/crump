@@ -356,22 +356,22 @@ def prepare(file_paths: tuple[Path, ...], config: Path, job: str | None, force: 
 
     Examples:
         # Create job config with auto-generated name
-        crump prepare data.csv --config crump_config.yaml
+        crump prepare data.csv --config crump_config.yml
 
         # Process a CDF file (creates multiple jobs, one per variable group)
-        crump prepare data.cdf --config crump_config.yaml
+        crump prepare data.cdf --config crump_config.yml
 
         # Create job config with custom name
-        crump prepare data.csv --config crump_config.yaml --job my_job
+        crump prepare data.csv --config crump_config.yml --job my_job
 
         # Process multiple CSV files (auto-generates job names)
-        crump prepare file1.csv file2.csv file3.csv --config crump_config.yaml
+        crump prepare file1.csv file2.csv file3.csv --config crump_config.yml
 
         # Process multiple files with glob pattern (CSV and CDF supported)
-        crump prepare data/*.csv data/*.cdf -c crump_config.yaml
+        crump prepare data/*.csv data/*.cdf -c crump_config.yml
 
         # Overwrite existing job config
-        crump prepare data.csv -c crump_config.yaml -j my_job --force
+        crump prepare data.csv -c crump_config.yml -j my_job --force
     """
     temp_dir: Path | None = None
     temp_csv_files: list[Path] = []

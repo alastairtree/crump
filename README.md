@@ -40,9 +40,9 @@ Examines and syncs CSV, Parquet, and CDF files into PostgreSQL or SQLite databas
 uv install crump # or pip install crump if you prefer
 
 # Create a configuration file
-crump prepare users.csv --config crump_config.yaml --job users_sync
+crump prepare users.csv --config crump_config.yml --job users_sync
 
-# Look at the mapping it generated for you in crump_config.yaml and edit as needed. 
+# Look at the mapping it generated for you in crump_config.yml and edit as needed. 
 # Crump has mapped your columns and suggested keys and indexes
 
 # get ready to sync - you db must be available
@@ -51,14 +51,14 @@ export DATABASE_URL="sqlite:///test.db"
 # export DATABASE_URL="postgresql://user:pass@localhost:5432/mydb"
 
 # preview changes first (requires --db-url or DATABASE_URL)
-crump sync users.csv crump_config.yaml --job users_sync --dry-run
+crump sync users.csv crump_config.yml --job users_sync --dry-run
 
 # Sync the file to database
-crump sync users.csv crump_config.yaml --job users_sync
+crump sync users.csv crump_config.yml --job users_sync
 
 # Later that day the v2 of the file arrives
 # Sync the new file, old records from v1 are removed automatically, updates are applied to rows that match based on primary key
-crump sync users_v2.csv crump_config.yaml --job users_sync
+crump sync users_v2.csv crump_config.yml --job users_sync
 ```
 
 ## Example Configuration
@@ -89,15 +89,15 @@ This configuration:
 
 ## Documentation
 
-📚 **[Read the full documentation](https://yourusername.github.io/crump)**
+📚 **[Read the full documentation](https://alastairtree.github.io/crump)**
 
-- [Installation Guide](https://yourusername.github.io/crump/installation/) - Install crump
-- [Quick Start](https://yourusername.github.io/crump/quick-start/) - Get started in 5 minutes
-- [Configuration](https://yourusername.github.io/crump/configuration/) - YAML configuration reference
-- [CLI Reference](https://yourusername.github.io/crump/cli-reference/) - Command-line documentation
-- [Features](https://yourusername.github.io/crump/features/) - Detailed feature documentation
-- [API Reference](https://yourusername.github.io/crump/api-reference/) - Python API documentation
-- [Development](https://yourusername.github.io/crump/development/) - Contributing guide
+- [Installation Guide](https://alastairtree.github.io/crump/installation/) - Install crump
+- [Quick Start](https://alastairtree.github.io/crump/quick-start/) - Get started in 5 minutes
+- [Configuration](https://alastairtree.github.io/crump/configuration/) - YAML configuration reference
+- [CLI Reference](https://alastairtree.github.io/crump/cli-reference/) - Command-line documentation
+- [Features](https://alastairtree.github.io/crump/features/) - Detailed feature documentation
+- [API Reference](https://alastairtree.github.io/crump/api-reference/) - Python API documentation
+- [Development](https://alastairtree.github.io/crump/development/) - Contributing guide
 
 
 ## Programmatic Usage
@@ -107,7 +107,7 @@ from pathlib import Path
 from crump import sync_csv_to_db, CrumpConfig
 
 # Load configuration
-config = CrumpConfig.from_yaml(Path("crump_config.yaml"))
+config = CrumpConfig.from_yaml(Path("crump_config.yml"))
 job = config.get_job("my_job")
 
 # Sync CSV to database (PostgreSQL or SQLite)
@@ -149,8 +149,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Support
 
 - 📖 [Documentation](https://alastairtree.github.io/crump)
-- 🐛 [Issue Tracker](https://github.com/yourusername/crump/issues)
-- 💬 [Discussions](https://github.com/yourusername/crump/discussions)
+- 🐛 [Issue Tracker](https://github.com/alastairtree/crump/issues)
+- 💬 [Discussions](https://github.com/alastairtree/crump/discussions)
 
 ## Acknowledgments
 

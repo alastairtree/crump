@@ -10,10 +10,10 @@ Running sync multiple times is safe - it uses PostgreSQL's `INSERT ... ON CONFLI
 
 ```bash
 # First run: inserts 3 rows
-crump sync users.csv crump_config.yaml sync_users
+crump sync users.csv crump_config.yml sync_users
 
 # Second run: updates existing rows, no duplicates
-crump sync users.csv crump_config.yaml sync_users
+crump sync users.csv crump_config.yml sync_users
 ```
 
 The same rows are updated, not duplicated. This makes crump safe for:
@@ -194,7 +194,7 @@ filename_to_column:
 **Day 1**: Sync sales for 2024-01-15
 
 ```bash
-crump sync sales_2024-01-15.csv crump_config.yaml daily_sales
+crump sync sales_2024-01-15.csv crump_config.yml daily_sales
 ```
 
 **Database**:
@@ -206,7 +206,7 @@ SELECT * FROM sales WHERE sync_date = '2024-01-15';
 **Day 2**: Re-sync with corrections (only 95 rows now)
 
 ```bash
-crump sync sales_2024-01-15-corrected.csv crump_config.yaml daily_sales
+crump sync sales_2024-01-15-corrected.csv crump_config.yml daily_sales
 ```
 
 **Result**:
@@ -331,7 +331,7 @@ indexes:
 The `prepare` command suggests indexes automatically:
 
 ```bash
-crump prepare activity_log.csv --config crump_config.yaml --job user_activity
+crump prepare activity_log.csv --config crump_config.yml --job user_activity
 ```
 
 **Rules**:
@@ -364,7 +364,7 @@ Preview all changes without modifying the database.
 
 ```bash
 export DATABASE_URL="sqlite:///test.db"
-crump sync data.csv crump_config.yaml --job my_job --dry-run
+crump sync data.csv crump_config.yml --job my_job --dry-run
 ```
 
 ### What it Shows
@@ -419,7 +419,7 @@ Primary target with full feature support:
 
 ```bash
 export DATABASE_URL="postgresql://localhost/mydb"
-crump sync data.csv crump_config.yaml my_job
+crump sync data.csv crump_config.yml my_job
 ```
 
 **Features**:
@@ -435,7 +435,7 @@ Alternative for testing and lightweight use:
 
 ```bash
 export DATABASE_URL="sqlite:///mydb.db"
-crump sync data.csv crump_config.yaml my_job
+crump sync data.csv crump_config.yml my_job
 ```
 
 **Limitations**:
@@ -491,7 +491,7 @@ Data-sync has built-in support for Common Data Format (CDF) science data files.
 Automatically extract CDF files to CSV and sync to database:
 
 ```bash
-crump sync science_data.cdf crump_config.yaml my_job --db-url postgresql://localhost/mydb
+crump sync science_data.cdf crump_config.yml my_job --db-url postgresql://localhost/mydb
 ```
 
 **How it works**:
@@ -531,10 +531,10 @@ Apply the same column mappings and transformations as `sync` command, but output
 
 ```bash
 # Extract with column selection and mapping
-crump extract science_data.cdf --config crump_config.yaml --job vectors_job
+crump extract science_data.cdf --config crump_config.yml --job vectors_job
 
 # Multiple files with transformations
-crump extract *.cdf --config crump_config.yaml --job my_job -o output/
+crump extract *.cdf --config crump_config.yml --job my_job -o output/
 ```
 
 **Features**:
@@ -549,25 +549,25 @@ crump extract *.cdf --config crump_config.yaml --job my_job -o output/
 **Preview data before syncing**:
 ```bash
 # Extract with config to see what will be synced
-crump extract data.cdf --config crump_config.yaml --job my_job --max-records 10
+crump extract data.cdf --config crump_config.yml --job my_job --max-records 10
 
 # Review the output CSV
 head output.csv
 
 # If satisfied, sync to database
-crump sync data.cdf crump_config.yaml my_job
+crump sync data.cdf crump_config.yml my_job
 ```
 
 **Generate processed CSV files**:
 ```bash
 # Apply transformations and save as CSV for other tools
-crump extract *.cdf --config crump_config.yaml --job processed_data -o ./processed/
+crump extract *.cdf --config crump_config.yml --job processed_data -o ./processed/
 ```
 
 **Test configurations**:
 ```bash
 # Test with limited records
-crump extract test_data.cdf --config crump_config.yaml --job my_job --max-records 100
+crump extract test_data.cdf --config crump_config.yml --job my_job --max-records 100
 
 # Verify output matches expectations
 python validate_output.py output.csv
@@ -592,7 +592,7 @@ Track detailed sync operation history in a `_crump_history` table for auditing a
 Add the `--history` flag to record sync operations:
 
 ```bash
-crump sync data.csv crump_config.yaml my_job --history
+crump sync data.csv crump_config.yml my_job --history
 ```
 
 ### History Table Schema
@@ -673,13 +673,13 @@ HAVING COUNT(*) > 1;
 
 ```bash
 # First sync - creates table and records history
-crump sync sales_2024-01-15.csv crump_config.yaml daily_sales --history
+crump sync sales_2024-01-15.csv crump_config.yml daily_sales --history
 
 # Check history
 psql -d mydb -c "SELECT * FROM _crump_history ORDER BY timestamp DESC LIMIT 1;"
 
 # Second sync - updates data and records new history entry
-crump sync sales_2024-01-16.csv crump_config.yaml daily_sales --history
+crump sync sales_2024-01-16.csv crump_config.yml daily_sales --history
 
 # View all sync operations
 psql -d mydb -c "SELECT timestamp, filename, table_name, rows_upserted, rows_deleted, success FROM _crump_history;"
