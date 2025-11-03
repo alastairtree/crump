@@ -106,18 +106,18 @@ def detect_nullable(values: list[str], total_rows: int) -> bool:
     return len(values) < total_rows
 
 
-def analyze_csv_types(csv_path: Path) -> dict[str, str]:
-    """Analyze a CSV file and detect data types for each column.
+def analyze_tabular_file_types(file_path: Path) -> dict[str, str]:
+    """Analyze a tabular file (CSV or Parquet) and detect data types for each column.
 
     Args:
-        csv_path: Path to the CSV file
+        file_path: Path to the tabular file
 
     Returns:
         Dictionary mapping column names to detected types
     """
     column_values: dict[str, list[str]] = {}
 
-    with create_reader(csv_path, file_format="csv") as reader:
+    with create_reader(file_path) as reader:
         if not reader.fieldnames:
             return {}
 
@@ -129,17 +129,17 @@ def analyze_csv_types(csv_path: Path) -> dict[str, str]:
         for row in reader:
             for col in reader.fieldnames:
                 if col in row and row[col]:
-                    column_values[col].append(row[col])
+                    column_values[col].append(str(row[col]))
 
     # Detect type for each column
     return {col: detect_column_type(values) for col, values in column_values.items()}
 
 
-def analyze_csv_types_and_nullable(csv_path: Path) -> dict[str, tuple[str, bool]]:
-    """Analyze a CSV file and detect data types and nullable status for each column.
+def analyze_tabular_file_types_and_nullable(file_path: Path) -> dict[str, tuple[str, bool]]:
+    """Analyze a tabular file (CSV or Parquet) and detect data types and nullable status for each column.
 
     Args:
-        csv_path: Path to the CSV file
+        file_path: Path to the tabular file
 
     Returns:
         Dictionary mapping column names to (data_type, nullable) tuples
@@ -147,7 +147,7 @@ def analyze_csv_types_and_nullable(csv_path: Path) -> dict[str, tuple[str, bool]
     column_values: dict[str, list[str]] = {}
     total_rows = 0
 
-    with create_reader(csv_path, file_format="csv") as reader:
+    with create_reader(file_path) as reader:
         if not reader.fieldnames:
             return {}
 
@@ -159,8 +159,10 @@ def analyze_csv_types_and_nullable(csv_path: Path) -> dict[str, tuple[str, bool]
         for row in reader:
             total_rows += 1
             for col in reader.fieldnames:
-                if col in row and row[col] and row[col].strip():
-                    column_values[col].append(row[col])
+                if col in row and row[col]:
+                    val_str = str(row[col]).strip()
+                    if val_str:
+                        column_values[col].append(val_str)
 
     # Detect type and nullable for each column
     result = {}
@@ -200,3 +202,8 @@ def suggest_id_column(columns: list[str], matchers: list[str] | None = None) -> 
 
     # Default to first column
     return columns[0] if columns else "id"
+
+
+# Backward compatibility aliases
+analyze_csv_types = analyze_tabular_file_types  # Deprecated: use analyze_tabular_file_types
+analyze_csv_types_and_nullable = analyze_tabular_file_types_and_nullable  # Deprecated: use analyze_tabular_file_types_and_nullable

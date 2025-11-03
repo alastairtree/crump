@@ -1,23 +1,23 @@
-"""Sync CSV and CDF science files into database.
+"""Sync CSV, Parquet, and CDF science files into database.
 
 This package provides both a CLI tool and programmatic API for syncing
-CSV and CDF files into a database (PostgreSQL or SQLite).
+CSV, Parquet, and CDF files into a database (PostgreSQL or SQLite).
 
 CLI Usage:
     crump sync <file> <config> <job> --db-url <url>
     crump prepare <file> <config> <job>
     crump inspect <file>
+    crump extract <file> --output-dir <dir>
 
 Programmatic Usage:
-    from crump import sync_csv, prepare_config, analyze_csv
+    from crump import sync_tabular_file_to_db, analyze_tabular_file_types_and_nullable
     from pathlib import Path
 
-    # Sync a CSV file
-    sync_csv(
-        file_path=Path("data.csv"),
-        config_path=Path("crump_config.yaml"),
-        job_name="my_job",
-        db_url="postgresql://localhost/mydb"
+    # Sync a tabular file (CSV or Parquet)
+    sync_tabular_file_to_db(
+        file_path=Path("data.parquet"),
+        job=job_config,
+        db_connection_string="postgresql://localhost/mydb"
     )
 """
 
@@ -33,10 +33,16 @@ from crump.config import (
 )
 from crump.database import (
     DryRunSummary,
-    sync_csv_to_db,
-    sync_csv_to_db_dry_run,
+    sync_csv_to_db,  # Backward compatibility
+    sync_csv_to_db_dry_run,  # Backward compatibility
+    sync_tabular_file_to_db,
+    sync_tabular_file_to_db_dry_run,
 )
-from crump.type_detection import analyze_csv_types_and_nullable, suggest_id_column
+from crump.type_detection import (
+    analyze_csv_types_and_nullable,  # Backward compatibility
+    analyze_tabular_file_types_and_nullable,
+    suggest_id_column,
+)
 
 __all__ = [
     "__version__",
@@ -47,10 +53,13 @@ __all__ = [
     "Index",
     "IndexColumn",
     # Database operations
-    "sync_csv_to_db",
-    "sync_csv_to_db_dry_run",
+    "sync_tabular_file_to_db",
+    "sync_tabular_file_to_db_dry_run",
+    "sync_csv_to_db",  # Deprecated alias
+    "sync_csv_to_db_dry_run",  # Deprecated alias
     "DryRunSummary",
     # Type detection
-    "analyze_csv_types_and_nullable",
+    "analyze_tabular_file_types_and_nullable",
+    "analyze_csv_types_and_nullable",  # Deprecated alias
     "suggest_id_column",
 ]
