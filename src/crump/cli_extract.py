@@ -8,7 +8,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from crump.cdf_extractor import extract_cdf_to_csv, extract_cdf_with_config
+from crump.cdf_extractor import extract_cdf_to_tabular_file, extract_cdf_with_config
 from crump.config import CrumpConfig
 from crump.console_utils import CHECKMARK
 
@@ -391,7 +391,7 @@ def _extract_raw(
             console.print(f"[bold]Processing:[/bold] {cdf_file.name}")
 
             try:
-                results = extract_cdf_to_csv(
+                results = extract_cdf_to_tabular_file(
                     cdf_file_path=cdf_file,
                     output_dir=output_dir,
                     filename_template=filename,

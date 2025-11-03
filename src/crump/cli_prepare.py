@@ -8,7 +8,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from crump.cdf_extractor import extract_cdf_to_csv
+from crump.cdf_extractor import extract_cdf_to_tabular_file
 from crump.config import (
     ColumnMapping,
     CrumpConfig,
@@ -200,16 +200,18 @@ def _create_column_mappings(
     return column_mappings
 
 
-def _extract_cdf_to_temp_csv(cdf_file: Path, temp_dir: Path, max_records: int = 50) -> list[Path]:
-    """Extract CDF file to temporary CSV files.
+def _extract_cdf_to_temp_tabular_files(
+    cdf_file: Path, temp_dir: Path, max_records: int = 50
+) -> list[Path]:
+    """Extract CDF file to temporary tabular files (CSV).
 
     Args:
         cdf_file: Path to the CDF file
-        temp_dir: Temporary directory to store CSV files
+        temp_dir: Temporary directory to store files
         max_records: Maximum number of records to extract (default: 50)
 
     Returns:
-        List of paths to temporary CSV files created
+        List of paths to temporary files created
 
     Raises:
         ValueError: If CDF extraction fails
@@ -219,7 +221,7 @@ def _extract_cdf_to_temp_csv(cdf_file: Path, temp_dir: Path, max_records: int = 
 
     try:
         # Extract with automerge enabled to group variables by record count
-        results = extract_cdf_to_csv(
+        results = extract_cdf_to_tabular_file(
             cdf_file_path=cdf_file,
             output_dir=temp_dir,
             filename_template=f"{cdf_file.stem}_[VARIABLE_NAME].csv",
@@ -410,7 +412,9 @@ def prepare(file_paths: tuple[Path, ...], config: Path, job: str | None, force: 
 
             for cdf_file in cdf_files:
                 try:
-                    extracted_csvs = _extract_cdf_to_temp_csv(cdf_file, temp_dir, max_records=50)
+                    extracted_csvs = _extract_cdf_to_temp_tabular_files(
+                        cdf_file, temp_dir, max_records=50
+                    )
                     temp_csv_files.extend(extracted_csvs)
                     console.print(
                         f"[green]{CHECKMARK} CDF extraction complete: {cdf_file.name}[/green]\n"

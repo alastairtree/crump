@@ -7,6 +7,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from .file_types import InputFileType, OutputFileType
+
 
 class TabularFileReader(ABC):
     """Abstract base class for reading tabular file formats.
@@ -123,54 +125,64 @@ class TabularFileWriter(ABC):
         pass
 
 
-def create_reader(file_path: str | Path, file_format: str | None = None) -> TabularFileReader:
+def create_reader(
+    file_path: str | Path, file_format: InputFileType | str | None = None
+) -> TabularFileReader:
     """Factory function to create appropriate reader based on file format.
 
     Args:
         file_path: Path to the file to read
-        file_format: File format ('csv' or 'parquet'). If None, auto-detect from extension.
+        file_format: File format (InputFileType enum, 'csv', or 'parquet').
+            If None, auto-detect from extension. Defaults to CSV for unknown extensions.
 
     Returns:
         TabularFileReader instance for the file format
 
     Raises:
-        ValueError: If file format is not supported or cannot be detected
+        ValueError: If file format is not supported
     """
     from .csv_file import CsvFileReader
     from .parquet_file import ParquetFileReader
 
     path = Path(file_path)
 
-    # Auto-detect format from extension if not specified
+    # Convert string to enum if needed, or auto-detect from extension
     if file_format is None:
-        suffix = path.suffix.lower()
-        if suffix == ".csv":
-            file_format = "csv"
-        elif suffix in [".parquet", ".pq"]:
-            file_format = "parquet"
+        # Auto-detect with CSV fallback for unknown extensions (like .cdf)
+        try:
+            format_enum = InputFileType.from_path(str(path))
+        except ValueError:
+            format_enum = InputFileType.CSV
+    elif isinstance(file_format, str):
+        # Convert string to enum
+        format_str = file_format.lower()
+        if format_str == "csv":
+            format_enum = InputFileType.CSV
+        elif format_str == "parquet":
+            format_enum = InputFileType.PARQUET
         else:
-            raise ValueError(
-                f"Cannot auto-detect file format from extension '{suffix}'. "
-                f"Please specify file_format parameter."
-            )
+            raise ValueError(f"Unsupported file format: {file_format}")
+    else:
+        format_enum = file_format
 
-    # Create appropriate reader
-    if file_format.lower() == "csv":
+    # Create appropriate reader (CDF not supported for reading tabular data)
+    if format_enum == InputFileType.CSV:
         return CsvFileReader(path)
-    elif file_format.lower() == "parquet":
+    elif format_enum == InputFileType.PARQUET:
         return ParquetFileReader(path)
     else:
-        raise ValueError(f"Unsupported file format: {file_format}")
+        raise ValueError(f"Cannot read {format_enum.value} files as tabular data")
 
 
 def create_writer(
-    file_path: str | Path, file_format: str | None = None, append: bool = False
+    file_path: str | Path, file_format: OutputFileType | str | None = None, append: bool = False
 ) -> TabularFileWriter:
     """Factory function to create appropriate writer based on file format.
 
     Args:
         file_path: Path to the file to write
-        file_format: File format ('csv' or 'parquet'). If None, auto-detect from extension.
+        file_format: File format (OutputFileType enum, 'csv', or 'parquet').
+            If None, auto-detect from extension.
         append: If True, append to existing file. If False, overwrite.
 
     Returns:
@@ -184,23 +196,25 @@ def create_writer(
 
     path = Path(file_path)
 
-    # Auto-detect format from extension if not specified
+    # Convert string to enum if needed, or auto-detect from extension
     if file_format is None:
-        suffix = path.suffix.lower()
-        if suffix == ".csv":
-            file_format = "csv"
-        elif suffix in [".parquet", ".pq"]:
-            file_format = "parquet"
+        format_enum = OutputFileType.from_path(str(path))
+    elif isinstance(file_format, str):
+        # Convert string to enum
+        format_str = file_format.lower()
+        if format_str == "csv":
+            format_enum = OutputFileType.CSV
+        elif format_str == "parquet":
+            format_enum = OutputFileType.PARQUET
         else:
-            raise ValueError(
-                f"Cannot auto-detect file format from extension '{suffix}'. "
-                f"Please specify file_format parameter."
-            )
+            raise ValueError(f"Unsupported file format: {file_format}")
+    else:
+        format_enum = file_format
 
     # Create appropriate writer
-    if file_format.lower() == "csv":
+    if format_enum == OutputFileType.CSV:
         return CsvFileWriter(path, append=append)
-    elif file_format.lower() == "parquet":
+    elif format_enum == OutputFileType.PARQUET:
         return ParquetFileWriter(path, append=append)
     else:
-        raise ValueError(f"Unsupported file format: {file_format}")
+        raise ValueError(f"Unsupported file format: {format_enum.value}")
