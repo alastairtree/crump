@@ -9,26 +9,37 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Install dependencies with development extras
 uv sync --all-extras
 
-# OR using pip
+# OR using pip (but do not use pip unless you have to - prefer uv for dependency management)
 pip install -e ".[dev]"
 ```
 
 ### Testing
+
+Always write unit tests for new features and bug fixes. Ensure all tests pass before committing code.
+Also add integration tests that exercise crump at the cli level using cli_runner - see tests/test_cli.py for examples.
+Tests should be passing before you commit code.
+
 ```bash
-# Start with unit tests and sqlite only as these are fast to run (and no Docker required)
+
+# Start with fast unit tests and sqlite only as these are fast to run (and no Docker required)
 uv run pytest tests -k "not [postgres]" -v
 
-# Run all tests
+# Then run the postgres tests (these are slower) - you should use the version of postgres that is already installed locally
+pytest tests -k "[postgres]" -v
+
+# Or run all tests
 uv run pytest -v
+```
+
+Other useful testing commands:
+
+```bash
 
 # Run all tests with coverage
 uv run pytest --cov=src --cov-report=term-missing
 
 # database integration tests for sqlite only so VERY FAST (and no Docker required)
 uv run pytest tests -k database -k "[sqlite]" -v
-
-# database integration tests for postgres only (slow) (Docker required)
-uv run pytest tests -k database -k "[postgres]" -v
 
 # Integration tests only (requires Docker)
 uv run pytest tests/test_database_integration.py -v
@@ -37,7 +48,10 @@ uv run pytest tests/test_database_integration.py -v
 uv run pytest tests/test_config.py::TestCrumpConfig::test_load_from_yaml -v
 ```
 
-### Code Quality
+### Code Quality - linting and Type Checking
+
+Always check code quality before committing code. Use the commands below to format, lint, and type check your code.
+
 ```bash
 # Format code
 uv run ruff format .
@@ -47,15 +61,15 @@ uv run ruff check --fix .
 
 # Type checking
 uv run mypy src
-
-# Run all quality checks
-uv run ruff format . && uv run ruff check --fix . && uv run mypy src && uv run pytest
 ```
 
 ### Documentation
+
+Documentation is in markdown files in docs/ folder. All new features should be documented. Documentation should include code and CLI examples. The code and cli examples will be tested in the test suite automatically to ensure they are valid.
+
 ```bash
 # Generate and serve documentation locally
-./generate-docs.sh
+./generate-docs.sh build
 
 # OR manually
 uv run mkdocs serve
@@ -95,19 +109,7 @@ uv run mkdocs serve
 
 ### Key Features
 
-**Filename to Column Extraction**:
-- Extract metadata (dates, versions) from filenames using templates or regex
-- Store extracted values in database columns
-- Use extracted values to clean up stale records automatically
-
-**Idempotent Operations**:
-- Safe to run multiple times
-- Updates existing records rather than duplicating
-- Handles schema changes gracefully
-
-**Compound Primary Keys**:
-- Support multi-column primary keys via `id_mapping` configuration
-- Handles complex data relationships
+See README.md and docs/index.md for detailed feature list.
 
 ### Configuration Structure
 
@@ -129,14 +131,6 @@ jobs:
       csv_col: db_col
 ```
 
-### Testing Strategy
-
-- **Unit Tests**: CLI, config parsing, type detection
-- **Integration Tests**: Real PostgreSQL via testcontainers
-- **Real Database Testing**: Uses Docker containers for authentic PostgreSQL testing
-- **High Coverage**: Aim for >90% coverage
-- **Test Markers**: `integration` marker for tests requiring Docker
-
 ### Dependencies
 
 - **Click**: CLI framework
@@ -145,3 +139,4 @@ jobs:
 - **psycopg**: PostgreSQL adapter
 - **cdflib**: CDF file reading
 - **testcontainers**: Integration testing with real databases
+- **pyarrow**: Parquet file support
