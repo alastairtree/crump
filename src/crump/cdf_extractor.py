@@ -306,8 +306,9 @@ def extract_cdf_to_csv(
             file_format = "parquet" if use_parquet else "csv"
 
             with create_writer(output_path, file_format=file_format, append=write_append) as writer:
-                # Write header
-                writer.writerow(all_column_names)
+                # Write header only if not appending
+                if not write_append:
+                    writer.writerow(all_column_names)
 
                 # Transpose data to write rows
                 for row_idx in range(actual_record_count):
@@ -369,8 +370,9 @@ def extract_cdf_to_csv(
             file_format = "parquet" if use_parquet else "csv"
 
             with create_writer(output_path, file_format=file_format, append=write_append) as writer:
-                # Write header
-                writer.writerow(col_names)
+                # Write header only if not appending
+                if not write_append:
+                    writer.writerow(col_names)
 
                 # Transpose data to write rows
                 for row_idx in range(actual_records):
@@ -636,8 +638,9 @@ def _transform_csv_with_config(
         write_append = append and output_path.exists()
         file_format = "parquet" if use_parquet else "csv"
         with create_writer(output_path, file_format=file_format, append=write_append) as writer:
-            # Write header
-            writer.writerow(output_columns)
+            # Write header only if not appending
+            if not write_append:
+                writer.writerow(output_columns)
 
             for row in reader:
                 # Apply column transformations
