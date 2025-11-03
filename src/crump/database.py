@@ -1038,7 +1038,7 @@ class DatabaseConnection:
         interval = int(100 / sample_percentage)
         return row_index % interval == 0
 
-    def _process_csv_rows(
+    def _process_tabular_rows(
         self,
         reader: Any,
         job: CrumpJob,
@@ -1046,10 +1046,10 @@ class DatabaseConnection:
         primary_keys: list[str],
         filename_values: dict[str, str] | None = None,
     ) -> tuple[int, set[tuple]]:
-        """Process and upsert CSV rows into database.
+        """Process and upsert tabular file rows into database.
 
         Args:
-            reader: CSV DictReader
+            reader: Tabular file reader (DictReader interface)
             job: CrumpJob configuration
             sync_columns: List of ColumnMapping objects
             primary_keys: List of primary key column names
@@ -1100,9 +1100,9 @@ class DatabaseConnection:
 
         return rows_synced, synced_ids
 
-    def _count_and_track_csv_rows(
+    def _count_and_track_tabular_rows(
         self,
-        csv_path: Path,
+        file_path: Path,
         job: CrumpJob,
         sync_columns: list[Any],
         filename_values: dict[str, str] | None = None,
@@ -1113,7 +1113,7 @@ class DatabaseConnection:
         which is shared logic between dry-run and actual sync operations.
 
         Args:
-            csv_path: Path to CSV file
+            file_path: Path to tabular file (CSV or Parquet)
             job: CrumpJob configuration
             sync_columns: List of ColumnMapping objects
             filename_values: Optional dict of values extracted from filename
@@ -1124,9 +1124,9 @@ class DatabaseConnection:
         row_count = 0
         synced_ids: set[tuple] = set()
 
-        file_format = _detect_file_format(csv_path)
+        file_format = _detect_file_format(file_path)
 
-        with create_reader(csv_path, file_format=file_format) as reader:
+        with create_reader(file_path, file_format=file_format) as reader:
             # For sampling, we need to know total row count first
             if job.sample_percentage is not None and job.sample_percentage < 100:
                 # Read all rows into memory to get total count and apply sampling
@@ -1163,12 +1163,12 @@ class DatabaseConnection:
         return row_count, synced_ids
 
     def _prepare_sync(
-        self, csv_path: Path, job: CrumpJob
+        self, file_path: Path, job: CrumpJob
     ) -> tuple[set[str], list[Any], dict[str, str]]:
         """Prepare for sync by validating CSV and building schema definitions.
 
         Args:
-            csv_path: Path to CSV file
+            file_path: Path to tabular file (CSV or Parquet)
             job: CrumpJob configuration
 
         Returns:
@@ -1178,12 +1178,12 @@ class DatabaseConnection:
             FileNotFoundError: If CSV file doesn't exist
             ValueError: If CSV is invalid or columns don't match
         """
-        if not csv_path.exists():
-            raise FileNotFoundError(f"File not found: {csv_path}")
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
 
-        file_format = _detect_file_format(csv_path)
+        file_format = _detect_file_format(file_path)
 
-        with create_reader(csv_path, file_format=file_format) as reader:
+        with create_reader(file_path, file_format=file_format) as reader:
             if not reader.fieldnames:
                 raise ValueError("File has no columns")
             csv_columns = set(reader.fieldnames)
@@ -1197,16 +1197,16 @@ class DatabaseConnection:
 
         return csv_columns, sync_columns, columns_def
 
-    def sync_csv_file_dry_run(
+    def sync_tabular_file_dry_run(
         self,
-        csv_path: Path,
+        file_path: Path,
         job: CrumpJob,
         filename_values: dict[str, str] | None = None,
     ) -> DryRunSummary:
         """Simulate syncing a CSV file without making database changes.
 
         Args:
-            csv_path: Path to CSV file
+            file_path: Path to tabular file (CSV or Parquet)
             job: CrumpJob configuration
             filename_values: Optional dict of values extracted from filename
 
@@ -1221,7 +1221,7 @@ class DatabaseConnection:
         summary.table_name = job.target_table
 
         # Prepare sync (validates CSV and builds schema)
-        csv_columns, sync_columns, columns_def = self._prepare_sync(csv_path, job)
+        csv_columns, sync_columns, columns_def = self._prepare_sync(file_path, job)
 
         # Check what schema changes would be made
         summary.table_exists = self.table_exists(job.target_table)
@@ -1246,8 +1246,8 @@ class DatabaseConnection:
         # but that would be expensive for large datasets. For now, we report
         # the upper bound of rows that could be updated.
         # If there are new columns, all rows will need updating regardless.
-        summary.rows_to_sync, synced_ids = self._count_and_track_csv_rows(
-            csv_path, job, sync_columns, filename_values
+        summary.rows_to_sync, synced_ids = self._count_and_track_tabular_rows(
+            file_path, job, sync_columns, filename_values
         )
 
         # Count stale records that would be deleted
@@ -1270,9 +1270,9 @@ class DatabaseConnection:
 
         return summary
 
-    def sync_csv_file(
+    def sync_tabular_file(
         self,
-        csv_path: Path,
+        file_path: Path,
         job: CrumpJob,
         filename_values: dict[str, str] | None = None,
         enable_history: bool = False,
@@ -1280,7 +1280,7 @@ class DatabaseConnection:
         """Sync a CSV file to the database using job configuration.
 
         Args:
-            csv_path: Path to CSV file
+            file_path: Path to tabular file (CSV or Parquet)
             job: CrumpJob configuration
             filename_values: Optional dict of values extracted from filename
             enable_history: Whether to record sync history
@@ -1303,7 +1303,7 @@ class DatabaseConnection:
 
         try:
             # Prepare sync (validates CSV and builds schema)
-            csv_columns, sync_columns, columns_def = self._prepare_sync(csv_path, job)
+            csv_columns, sync_columns, columns_def = self._prepare_sync(file_path, job)
 
             # Build schema and setup table
             primary_keys = [id_col.db_column for id_col in job.id_mapping]
@@ -1311,9 +1311,9 @@ class DatabaseConnection:
             schema_changed = self._setup_table_schema(job, columns_def, primary_keys)
 
             # Process rows
-            file_format = _detect_file_format(csv_path)
-            with create_reader(csv_path, file_format=file_format) as reader:
-                rows_synced, synced_ids = self._process_csv_rows(
+            file_format = _detect_file_format(file_path)
+            with create_reader(file_path, file_format=file_format) as reader:
+                rows_synced, synced_ids = self._process_tabular_rows(
                     reader, job, sync_columns, primary_keys, filename_values
                 )
 
@@ -1351,7 +1351,7 @@ class DatabaseConnection:
                 try:
                     record_sync_history(
                         backend=self.backend,
-                        file_path=csv_path,
+                        file_path=file_path,
                         table_name=job.target_table,
                         rows_upserted=final_rows_synced,
                         rows_deleted=rows_deleted,
@@ -1365,18 +1365,38 @@ class DatabaseConnection:
                     # Don't fail the sync if history recording fails
                     logger.warning(f"Failed to record sync history: {hist_error}")
 
+    # Backward compatibility method aliases
+    def sync_csv_file(
+        self,
+        csv_path: Path,  # noqa: ARG002
+        job: CrumpJob,  # noqa: ARG002
+        filename_values: dict[str, str] | None = None,  # noqa: ARG002
+        enable_history: bool = False,  # noqa: ARG002
+    ) -> int:
+        """Deprecated: use sync_tabular_file instead."""
+        return self.sync_tabular_file(csv_path, job, filename_values, enable_history)
 
-def sync_csv_to_db(
-    csv_path: Path,
+    def sync_csv_file_dry_run(
+        self,
+        csv_path: Path,  # noqa: ARG002
+        job: CrumpJob,  # noqa: ARG002
+        filename_values: dict[str, str] | None = None,  # noqa: ARG002
+    ) -> DryRunSummary:
+        """Deprecated: use sync_tabular_file_dry_run instead."""
+        return self.sync_tabular_file_dry_run(csv_path, job, filename_values)
+
+
+def sync_tabular_file_to_db(
+    file_path: Path,
     job: CrumpJob,
     db_connection_string: str,
     filename_values: dict[str, str] | None = None,
     enable_history: bool = False,
 ) -> int:
-    """Sync a CSV file to database.
+    """Sync a tabular file (CSV or Parquet) to database.
 
     Args:
-        csv_path: Path to the CSV file
+        file_path: Path to the tabular file (CSV or Parquet)
         job: CrumpJob configuration
         db_connection_string: Database connection string (PostgreSQL or SQLite)
         filename_values: Optional dict of values extracted from filename
@@ -1386,19 +1406,19 @@ def sync_csv_to_db(
         Number of rows synced
     """
     with DatabaseConnection(db_connection_string) as db:
-        return db.sync_csv_file(csv_path, job, filename_values, enable_history)
+        return db.sync_tabular_file(file_path, job, filename_values, enable_history)
 
 
-def sync_csv_to_db_dry_run(
-    csv_path: Path,
+def sync_tabular_file_to_db_dry_run(
+    file_path: Path,
     job: CrumpJob,
     db_connection_string: str,
     filename_values: dict[str, str] | None = None,
 ) -> DryRunSummary:
-    """Simulate syncing a CSV file without making database changes.
+    """Simulate syncing a tabular file without making database changes.
 
     Args:
-        csv_path: Path to the CSV file
+        file_path: Path to the tabular file (CSV or Parquet)
         job: CrumpJob configuration
         db_connection_string: Database connection string
         filename_values: Optional dict of values extracted from filename
@@ -1407,4 +1427,11 @@ def sync_csv_to_db_dry_run(
         DryRunSummary with details of what would be changed
     """
     with DatabaseConnection(db_connection_string) as db:
-        return db.sync_csv_file_dry_run(csv_path, job, filename_values)
+        return db.sync_tabular_file_dry_run(file_path, job, filename_values)
+
+
+# Backward compatibility aliases
+sync_csv_to_db = sync_tabular_file_to_db  # Deprecated: use sync_tabular_file_to_db
+sync_csv_to_db_dry_run = (
+    sync_tabular_file_to_db_dry_run  # Deprecated: use sync_tabular_file_to_db_dry_run
+)
