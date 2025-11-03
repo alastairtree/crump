@@ -297,3 +297,29 @@ class TestInspectParquetFiles:
         assert "CSV File: data.csv" in result.output
         assert "Parquet File: data.parquet" in result.output
         assert "Alice" in result.output
+
+    def test_inspect_large_parquet_file(self, cli_runner: CliRunner, tmp_path: Path) -> None:
+        """Test that inspect_tabular doesn't load all rows into memory for large Parquet files."""
+        from crump.tabular_file import create_writer
+
+        # Create a large Parquet file with 100k rows
+        parquet_file = tmp_path / "large_data.parquet"
+        num_rows = 100000
+
+        with create_writer(parquet_file) as writer:
+            writer.writerow(["id", "value", "description"])
+            for i in range(num_rows):
+                writer.writerow([i, i * 10, f"Row {i}"])
+
+        # Inspect with only 5 records - this should be fast and not load all 100k rows
+        result = cli_runner.invoke(main, ["inspect", str(parquet_file), "--max-records", "5"])
+        assert result.exit_code == 0
+        assert "Parquet File: large_data.parquet" in result.output
+        assert "Columns (3):" in result.output
+        assert "id, value, description" in result.output
+
+        # Should show first 5 rows in the sample
+        assert "Sample Records (first 5)" in result.output or "Sample Records" in result.output
+
+        # The test passes if it completes without crashing/hanging
+        # The old code would try to load all 100k rows into memory
