@@ -603,6 +603,7 @@ The `_crump_history` table is automatically created with the following columns:
 |--------|------|-------------|
 | `timestamp` | TIMESTAMP | When the sync started (UTC, primary key) |
 | `filename` | TEXT | Name of the file being synced |
+| `table_name` | TEXT | Target table name for the sync |
 | `rows_upserted` | INTEGER | Number of rows inserted or updated |
 | `rows_deleted` | INTEGER | Number of stale rows deleted |
 | `data_hash` | TEXT | SHA256 hash of the data file |
@@ -616,7 +617,7 @@ The `_crump_history` table is automatically created with the following columns:
 **Audit trail**:
 ```sql
 -- View recent sync operations
-SELECT timestamp, filename, rows_upserted, success
+SELECT timestamp, filename, table_name, rows_upserted, success
 FROM _crump_history
 ORDER BY timestamp DESC
 LIMIT 10;
@@ -634,17 +635,18 @@ ORDER BY timestamp DESC;
 **Track data changes**:
 ```sql
 -- Files that caused schema changes
-SELECT filename, timestamp
+SELECT filename, table_name, timestamp
 FROM _crump_history
 WHERE schema_changed = true;
 ```
 
 **Performance monitoring**:
 ```sql
--- Average sync duration by file
-SELECT filename, AVG(duration_seconds) as avg_duration
+-- Average sync duration by table
+SELECT table_name, AVG(duration_seconds) as avg_duration
 FROM _crump_history
-GROUP BY filename
+WHERE success = true
+GROUP BY table_name
 ORDER BY avg_duration DESC;
 ```
 
@@ -680,7 +682,7 @@ psql -d mydb -c "SELECT * FROM _crump_history ORDER BY timestamp DESC LIMIT 1;"
 crump sync sales_2024-01-16.csv crump_config.yaml daily_sales --history
 
 # View all sync operations
-psql -d mydb -c "SELECT timestamp, filename, rows_upserted, rows_deleted, success FROM _crump_history;"
+psql -d mydb -c "SELECT timestamp, filename, table_name, rows_upserted, rows_deleted, success FROM _crump_history;"
 ```
 
 ### Best Practices
