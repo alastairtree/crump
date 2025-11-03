@@ -10,11 +10,11 @@ CLI Usage:
     crump extract <file> --output-dir <dir>
 
 Programmatic Usage:
-    from crump import sync_tabular_file_to_db, analyze_tabular_file_types_and_nullable
+    from crump import sync_file_to_db, analyze_tabular_file_types_and_nullable
     from pathlib import Path
 
     # Sync a tabular file (CSV or Parquet)
-    sync_tabular_file_to_db(
+    sync_file_to_db(
         file_path=Path("data.parquet"),
         job=job_config,
         db_connection_string="postgresql://localhost/mydb"
@@ -33,8 +33,8 @@ from crump.config import (
 )
 from crump.database import (
     DryRunSummary,
-    sync_tabular_file_to_db,
-    sync_tabular_file_to_db_dry_run,
+    sync_file_to_db,
+    sync_file_to_db_dry_run,
 )
 from crump.type_detection import (
     analyze_tabular_file_types_and_nullable,
@@ -50,8 +50,8 @@ __all__ = [
     "Index",
     "IndexColumn",
     # Database operations
-    "sync_tabular_file_to_db",
-    "sync_tabular_file_to_db_dry_run",
+    "sync_file_to_db",
+    "sync_file_to_db_dry_run",
     "DryRunSummary",
     # Type detection
     "analyze_tabular_file_types_and_nullable",

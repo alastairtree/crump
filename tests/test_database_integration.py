@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from crump.config import CrumpConfig
-from crump.database import DatabaseConnection, sync_tabular_file_to_db
+from crump.database import DatabaseConnection, sync_file_to_db
 from tests.db_test_utils import execute_query, get_table_columns, get_table_indexes
 
 
@@ -46,7 +46,7 @@ class TestDatabaseIntegration:
         assert job is not None
 
         # First sync
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url)
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
         assert rows_synced == 3
 
         # Verify data in database
@@ -63,7 +63,7 @@ class TestDatabaseIntegration:
         assert rows[2] == ("3", "Charlie")
 
         # Second sync (idempotency test)
-        rows_synced_2 = sync_tabular_file_to_db(csv_file, job, db_url)
+        rows_synced_2 = sync_file_to_db(csv_file, job, db_url)
         assert rows_synced_2 == 3
 
         # Verify data hasn't changed
@@ -94,7 +94,7 @@ class TestDatabaseIntegration:
         job = config.get_job("sync_products")
         assert job is not None
 
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url)
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
         assert rows_synced == 2
 
         # Verify all columns were synced
@@ -125,13 +125,13 @@ class TestDatabaseIntegration:
         job = config.get_job("test_upsert")
 
         # First sync
-        sync_tabular_file_to_db(csv_file, job, db_url)
+        sync_file_to_db(csv_file, job, db_url)
 
         # Update the CSV with new value for same ID
         create_csv_file(csv_file, ["id", "value"], [{"id": "1", "value": "updated"}])
 
         # Second sync should update the row
-        sync_tabular_file_to_db(csv_file, job, db_url)
+        sync_file_to_db(csv_file, job, db_url)
 
         # Verify only one row exists with updated value
         count_result = execute_query(db_url, "SELECT COUNT(*) FROM test_data")
@@ -201,7 +201,7 @@ jobs:
         filename_values = job.filename_to_column.extract_values_from_filename(csv_file)
         assert filename_values == {"date": "2024-01-15"}
 
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url, filename_values)
+        rows_synced = sync_file_to_db(csv_file, job, db_url, filename_values)
         assert rows_synced == 2
 
         # Verify date column was created and populated
@@ -251,7 +251,7 @@ jobs:
         job = config.get_job("daily_data")
 
         filename_values = job.filename_to_column.extract_values_from_filename(csv_file)
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url, filename_values)
+        rows_synced = sync_file_to_db(csv_file, job, db_url, filename_values)
         assert rows_synced == 3
 
         # Verify 3 records exist
@@ -267,7 +267,7 @@ jobs:
             writer.writerow({"id": "1", "value": "A_updated"})
             writer.writerow({"id": "2", "value": "B_updated"})
 
-        rows_synced_2 = sync_tabular_file_to_db(csv_file, job, db_url, filename_values)
+        rows_synced_2 = sync_file_to_db(csv_file, job, db_url, filename_values)
         assert rows_synced_2 == 2
 
         # Verify only 2 records remain for this date
@@ -308,7 +308,7 @@ jobs:
             writer.writerow({"id": "2", "value": "Day1"})
 
         filename_values_1 = job.filename_to_column.extract_values_from_filename(csv_file_1)
-        sync_tabular_file_to_db(csv_file_1, job, db_url, filename_values_1)
+        sync_file_to_db(csv_file_1, job, db_url, filename_values_1)
 
         # Sync data for 2024-01-16
         csv_file_2 = tmp_path / "data_2024-01-16.csv"
@@ -320,7 +320,7 @@ jobs:
             writer.writerow({"id": "3", "value": "Day2"})
 
         filename_values_2 = job.filename_to_column.extract_values_from_filename(csv_file_2)
-        sync_tabular_file_to_db(csv_file_2, job, db_url, filename_values_2)
+        sync_file_to_db(csv_file_2, job, db_url, filename_values_2)
 
         # Verify total records (IDs 1,2 were updated to day 2, ID 3 was inserted)
         total_count_result = execute_query(db_url, "SELECT COUNT(*) FROM multi_date_data")
@@ -332,7 +332,7 @@ jobs:
             writer.writeheader()
             writer.writerow({"id": "1", "value": "Day1_updated"})
 
-        sync_tabular_file_to_db(csv_file_1, job, db_url, filename_values_1)
+        sync_file_to_db(csv_file_1, job, db_url, filename_values_1)
 
         # Verify: ID 1 updated back to day 1, IDs 2 and 3 still on day 2
         day1_count_result = execute_query(
@@ -391,7 +391,7 @@ jobs:
                 }
             )
 
-        sync_tabular_file_to_db(csv_file, job, db_url)
+        sync_file_to_db(csv_file, job, db_url)
 
         # Verify data was synced
         rows = execute_query(
@@ -426,7 +426,7 @@ jobs:
             writer.writeheader()
             writer.writerow({"customer_id": "1", "name": "Alice"})
 
-        sync_tabular_file_to_db(csv_file, job, db_url)
+        sync_file_to_db(csv_file, job, db_url)
 
         # Verify initial schema
         columns = get_table_columns(db_url, "customers")
@@ -462,7 +462,7 @@ jobs:
                 {"customer_id": "2", "name": "Bob", "email": "bob@example.com", "age": "30"}
             )
 
-        sync_tabular_file_to_db(csv_file, job, db_url)
+        sync_file_to_db(csv_file, job, db_url)
 
         # Verify schema now includes new columns
         columns = get_table_columns(db_url, "customers")
@@ -510,7 +510,7 @@ jobs:
         )
 
         # Sync data
-        sync_tabular_file_to_db(csv_file, job, db_url)
+        sync_file_to_db(csv_file, job, db_url)
 
         # Verify data
         rows = execute_query(
@@ -534,7 +534,7 @@ jobs:
                 {"store_id": "2", "product_id": "B", "quantity": "3", "price": "19.99"}
             )  # New
 
-        sync_tabular_file_to_db(csv_file, job, db_url)
+        sync_file_to_db(csv_file, job, db_url)
 
         # Verify update and insert
         rows = execute_query(
@@ -571,14 +571,14 @@ jobs:
         )
 
         # Sync data
-        sync_tabular_file_to_db(csv_file, job, db_url)
+        sync_file_to_db(csv_file, job, db_url)
 
         # Verify index exists
         indexes = get_table_indexes(db_url, "users")
         assert "idx_email" in indexes
 
         # Sync again - index should not be recreated (no error)
-        sync_tabular_file_to_db(csv_file, job, db_url)
+        sync_file_to_db(csv_file, job, db_url)
 
     @pytest.mark.parametrize("db_url", ["sqlite", "postgres"], indirect=True)
     def test_multi_column_index(self, tmp_path: Path, db_url: str) -> None:
@@ -623,7 +623,7 @@ jobs:
         )
 
         # Sync data
-        sync_tabular_file_to_db(csv_file, job, db_url)
+        sync_file_to_db(csv_file, job, db_url)
 
         # Verify index exists
         indexes = get_table_indexes(db_url, "orders")
@@ -664,7 +664,7 @@ jobs:
         )
 
         # Sync data
-        sync_tabular_file_to_db(csv_file, job, db_url)
+        sync_file_to_db(csv_file, job, db_url)
 
         # Verify all indexes exist
         indexes = get_table_indexes(db_url, "products")
@@ -722,7 +722,7 @@ jobs:
         }
 
         # Sync data
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url, filename_values)
+        rows_synced = sync_file_to_db(csv_file, job, db_url, filename_values)
         assert rows_synced == 2
 
         # Verify all columns were created
@@ -783,7 +783,7 @@ jobs:
         assert filename_values == {"date": "20240315", "version": "1"}
 
         # Sync data
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url, filename_values)
+        rows_synced = sync_file_to_db(csv_file, job, db_url, filename_values)
         assert rows_synced == 1
 
         # Verify data
@@ -840,7 +840,7 @@ jobs:
             writer.writerow({"obs_id": "3", "value": "A3"})
 
         filename_values_1 = job.filename_to_column.extract_values_from_filename(csv_file_1)
-        sync_tabular_file_to_db(csv_file_1, job, db_url, filename_values_1)
+        sync_file_to_db(csv_file_1, job, db_url, filename_values_1)
 
         # Second sync: mission A, different date, version v1
         csv_file_2 = tmp_path / "missionA_2024-01-16_v1.csv"
@@ -851,7 +851,7 @@ jobs:
             writer.writerow({"obs_id": "4", "value": "A2_day2"})
 
         filename_values_2 = job.filename_to_column.extract_values_from_filename(csv_file_2)
-        sync_tabular_file_to_db(csv_file_2, job, db_url, filename_values_2)
+        sync_file_to_db(csv_file_2, job, db_url, filename_values_2)
 
         # Verify we have 4 records total:
         # - 2 for missionA + 2024-01-15 (IDs 2,3 plus the now updated ID 1)
@@ -866,7 +866,7 @@ jobs:
             writer.writerow({"obs_id": "1", "value": "A1_updated"})
             writer.writerow({"obs_id": "2", "value": "A2_updated"})
 
-        sync_tabular_file_to_db(csv_file_1, job, db_url, filename_values_1)
+        sync_file_to_db(csv_file_1, job, db_url, filename_values_1)
 
         # Verify: Records for mission A + date 2024-01-15 only have IDs 1,2
         # Mission A + date 2024-01-16 should only have ID 4
@@ -929,7 +929,7 @@ jobs:
             writer.writerow({"obs_id": "3", "value": "A3"})
 
         filename_values_1 = job.filename_to_column.extract_values_from_filename(csv_file_1)
-        sync_tabular_file_to_db(csv_file_1, job, db_url, filename_values_1)
+        sync_file_to_db(csv_file_1, job, db_url, filename_values_1)
 
         # Second sync: mission A, different date, version v1
         csv_file_2 = tmp_path / "missionA_2024-01-16_v1.csv"
@@ -942,7 +942,7 @@ jobs:
             writer.writerow({"obs_id": "4", "value": "A2_day2"})
 
         filename_values_2 = job.filename_to_column.extract_values_from_filename(csv_file_2)
-        sync_tabular_file_to_db(csv_file_2, job, db_url, filename_values_2)
+        sync_file_to_db(csv_file_2, job, db_url, filename_values_2)
 
         # Verify we have 4 records total:
         total_count = execute_query(db_url, "SELECT COUNT(*) FROM mission_records")
@@ -955,7 +955,7 @@ jobs:
             writer.writerow({"obs_id": "1", "value": "A1"})
             writer.writerow({"obs_id": "3", "value": "A3_day3"})
             writer.writerow({"obs_id": "4", "value": "A2_day2_updated"})
-        sync_tabular_file_to_db(csv_file_2, job, db_url, filename_values_2)
+        sync_file_to_db(csv_file_2, job, db_url, filename_values_2)
 
         # Verify: Records for mission A + date 2024-01-15 not there any more as were updated to date 2024-01-16
         day1_count = execute_query(
@@ -1004,7 +1004,7 @@ jobs:
         assert job is not None
 
         # Sync with sampling
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url)
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
 
         # Verify correct rows were synced
         # With 10%, we expect rows at indices: 0, 10, 20, 24 (last)
@@ -1046,7 +1046,7 @@ jobs:
         assert job is not None
 
         # Sync with sampling
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url)
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
 
         # With 50%, we expect rows at indices: 0, 2, 4, 6, 8, 9 (last)
         # That's 6 rows total
@@ -1084,7 +1084,7 @@ jobs:
         assert job is not None
 
         # Sync with 100% sampling (should sync all rows)
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url)
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
         assert rows_synced == 5
 
         # Verify all rows in database
@@ -1115,7 +1115,7 @@ jobs:
         assert job is not None
 
         # Sync without sampling (should sync all rows)
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url)
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
         assert rows_synced == 5
 
         # Verify all rows in database
@@ -1124,7 +1124,7 @@ jobs:
 
     def test_dry_run_with_sample_percentage(self, tmp_path: Path, db_url: str) -> None:
         """Test dry run with sample_percentage."""
-        from crump.database import sync_tabular_file_to_db_dry_run
+        from crump.database import sync_file_to_db_dry_run
         from tests.test_helpers import create_csv_file
 
         # Create CSV with 25 rows
@@ -1148,7 +1148,7 @@ jobs:
         assert job is not None
 
         # Dry run
-        summary = sync_tabular_file_to_db_dry_run(csv_file, job, db_url)
+        summary = sync_file_to_db_dry_run(csv_file, job, db_url)
 
         # Verify dry run summary
         assert summary.table_name == "sample_test_dry"
@@ -1198,7 +1198,7 @@ jobs:
         assert job is not None
 
         # Sync with lookup
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url)
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
         assert rows_synced == 3
 
         # Verify data was transformed
@@ -1244,7 +1244,7 @@ jobs:
         assert job is not None
 
         # Sync with lookup
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url)
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
         assert rows_synced == 3
 
         # Verify data - unknown values passed through
@@ -1294,7 +1294,7 @@ jobs:
         assert job is not None
 
         # Sync with lookup
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url)
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
         assert rows_synced == 4
 
         # Verify data was transformed
@@ -1350,7 +1350,7 @@ jobs:
         assert job is not None
 
         # Sync with lookups
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url)
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
         assert rows_synced == 3
 
         # Verify both columns were transformed
@@ -1402,7 +1402,7 @@ jobs:
         assert job is not None
 
         # Sync with expression
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url)
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
         assert rows_synced == 3
 
         # Verify calculated column
@@ -1450,7 +1450,7 @@ jobs:
         assert job is not None
 
         # Sync with function
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url)
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
         assert rows_synced == 2
 
         # Verify calculated column
@@ -1497,7 +1497,7 @@ jobs:
         assert job is not None
 
         # Sync with function
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url)
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
         assert rows_synced == 2
 
         # Verify concatenated column
@@ -1563,7 +1563,7 @@ jobs:
         assert job is not None
 
         # Sync with multiple functions
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url)
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
         assert rows_synced == 2
 
         # Verify both calculated columns
@@ -1577,7 +1577,7 @@ jobs:
 
     def test_dry_run_with_custom_function(self, tmp_path: Path, db_url: str) -> None:
         """Test dry-run mode with custom function."""
-        from crump.database import sync_tabular_file_to_db_dry_run
+        from crump.database import sync_file_to_db_dry_run
         from tests.test_helpers import create_csv_file
 
         # Create CSV
@@ -1609,7 +1609,7 @@ jobs:
         assert job is not None
 
         # Run dry-run
-        summary = sync_tabular_file_to_db_dry_run(csv_file, job, db_url)
+        summary = sync_file_to_db_dry_run(csv_file, job, db_url)
 
         assert summary.table_name == "dryrun_func"
         assert not summary.table_exists
@@ -1651,7 +1651,7 @@ jobs:
         assert job is not None
 
         # Sync with expression
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url)
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
         assert rows_synced == 3
 
         # Verify transformed values
@@ -1694,7 +1694,7 @@ jobs:
         assert job is not None
 
         # Sync with function
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url)
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
         assert rows_synced == 2
 
         # Verify transformed values
@@ -1737,7 +1737,7 @@ jobs:
         assert job is not None
 
         # Sync with polynomial
-        rows_synced = sync_tabular_file_to_db(csv_file, job, db_url)
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
         assert rows_synced == 3
 
         # Verify calibrated values: y = 0.01*x^2 + 1.5*x + 2

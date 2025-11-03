@@ -9,7 +9,7 @@ from rich.console import Console
 from crump.cdf_extractor import extract_cdf_to_tabular_file
 from crump.config import CrumpConfig
 from crump.console_utils import BULLET, CHECKMARK, HORIZONTAL_LINE
-from crump.database import sync_tabular_file_to_db, sync_tabular_file_to_db_dry_run
+from crump.database import sync_file_to_db, sync_file_to_db_dry_run
 
 console = Console()
 
@@ -236,9 +236,7 @@ def sync(
                 f"[cyan]DRY RUN: Simulating sync of {csv_file_to_sync.name} using job '{job}'...[/cyan]"
             )
             # History is never recorded during dry-run
-            summary = sync_tabular_file_to_db_dry_run(
-                csv_file_to_sync, crump_job, db_url, filename_values
-            )
+            summary = sync_file_to_db_dry_run(csv_file_to_sync, crump_job, db_url, filename_values)
 
             # Display dry-run summary
             console.print("\n[bold yellow]Dry-run Summary[/bold yellow]")
@@ -294,7 +292,7 @@ def sync(
         else:
             # Sync the file
             console.print(f"[cyan]Syncing {csv_file_to_sync.name} using job '{job}'...[/cyan]")
-            rows_synced = sync_tabular_file_to_db(
+            rows_synced = sync_file_to_db(
                 csv_file_to_sync, crump_job, db_url, filename_values, enable_history=history
             )
 
