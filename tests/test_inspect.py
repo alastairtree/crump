@@ -15,7 +15,7 @@ class TestInspectCommand:
         """Test that inspect command has help text."""
         result = cli_runner.invoke(main, ["inspect", "--help"])
         assert result.exit_code == 0
-        assert "Inspect CSV or CDF files" in result.output
+        assert "Inspect CSV, Parquet, or CDF files" in result.output
         assert "--max-records" in result.output
         assert "-n" in result.output
 

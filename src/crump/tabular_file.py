@@ -31,7 +31,7 @@ class TabularFileReader(ABC):
         self.file_path = Path(file_path)
 
     @abstractmethod
-    def __enter__(self) -> "TabularFileReader":
+    def __enter__(self) -> TabularFileReader:
         """Enter context manager and prepare for reading.
 
         Returns:
@@ -94,7 +94,7 @@ class TabularFileWriter(ABC):
         self.append = append
 
     @abstractmethod
-    def __enter__(self) -> "TabularFileWriter":
+    def __enter__(self) -> TabularFileWriter:
         """Enter context manager and prepare for writing.
 
         Returns:
