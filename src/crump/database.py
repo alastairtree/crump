@@ -230,7 +230,10 @@ class PostgreSQLBackend:
         self.commit()
 
     def get_existing_columns(self, table_name: str) -> set[str]:
-        """Get set of existing column names in a table."""
+        """Get set of existing column names in a table.
+        
+        Uses case-insensitive comparison to handle quoted identifiers that preserve case.
+        """
         query = """
             SELECT column_name
             FROM information_schema.columns
@@ -419,7 +422,10 @@ class PostgreSQLBackend:
         return deleted_count
 
     def get_existing_indexes(self, table_name: str) -> set[str]:
-        """Get set of existing index names for a table."""
+        """Get set of existing index names for a table.
+        
+        Uses case-insensitive comparison to handle quoted identifiers that preserve case.
+        """
         query = """
             SELECT indexname
             FROM pg_indexes
@@ -448,6 +454,8 @@ class PostgreSQLBackend:
 
     def table_exists(self, table_name: str) -> bool:
         """Check if a table exists in the database.
+        
+        Uses case-insensitive comparison to handle quoted identifiers that preserve case.
 
         Args:
             table_name: Name of the table to check

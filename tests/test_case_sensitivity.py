@@ -19,8 +19,9 @@ def test_mixed_case_table_name_index_detection(db_url: str, tmp_path: Path) -> N
     that indexes need to be created when they already exist, if the table name
     had mixed case characters.
 
-    The bug occurred because PostgreSQL stores table names in pg_indexes with their
-    original case (when quoted), but the query was using case-sensitive comparison.
+    The bug occurred because PostgreSQL stores table names with their original case
+    (when quoted as identifiers) in system catalogs (pg_indexes, information_schema.tables,
+    information_schema.columns), but the queries were using case-sensitive comparison.
     """
     # Create a CSV file
     csv_file = tmp_path / "test.csv"
