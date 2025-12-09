@@ -234,7 +234,7 @@ class PostgreSQLBackend:
         query = """
             SELECT column_name
             FROM information_schema.columns
-            WHERE table_name = %s
+            WHERE LOWER(table_name) = LOWER(%s)
         """
         results = self.fetchall(query, (table_name,))
         return {row[0].lower() for row in results}
@@ -423,7 +423,7 @@ class PostgreSQLBackend:
         query = """
             SELECT indexname
             FROM pg_indexes
-            WHERE tablename = %s
+            WHERE LOWER(tablename) = LOWER(%s)
         """
         results = self.fetchall(query, (table_name,))
         return {row[0].lower() for row in results}
@@ -458,7 +458,7 @@ class PostgreSQLBackend:
         query = """
             SELECT EXISTS (
                 SELECT FROM information_schema.tables
-                WHERE table_name = %s
+                WHERE LOWER(table_name) = LOWER(%s)
             )
         """
         result = self.fetchall(query, (table_name,))
