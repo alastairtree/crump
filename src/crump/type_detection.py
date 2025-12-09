@@ -25,9 +25,9 @@ def detect_column_type(values: list[str]) -> str:
     if not non_empty:
         return "text"
 
-    # Check if ANY value is a bigint (exceeds INTEGER range)
+    # Check if ANY value is a bigint AND all values are numeric (integers)
     # This handles mixed cases where some values are small integers and some are large
-    if any(_is_bigint(v) for v in non_empty):
+    if any(_is_bigint(v) for v in non_empty) and all(_is_any_integer(v) for v in non_empty):
         return "bigint"
 
     # Check if all values are integers (within INTEGER range)
@@ -79,6 +79,19 @@ def _is_bigint(value: str) -> bool:
         return (int_val < -2147483648 or int_val > 2147483647) and (
             -9223372036854775808 <= int_val <= 9223372036854775807
         )
+    except ValueError:
+        return False
+
+
+def _is_any_integer(value: str) -> bool:
+    """Check if a string represents any integer (within INTEGER or BIGINT range).
+
+    This returns True for both small integers and large integers.
+    """
+    try:
+        int_val = int(value)
+        # Check if value fits in BIGINT range
+        return -9223372036854775808 <= int_val <= 9223372036854775807
     except ValueError:
         return False
 

@@ -52,6 +52,29 @@ class TestDetectColumnType:
         values = ["1", "2", "3", "4", "5", "999999999999999999"]
         assert detect_column_type(values) == "bigint"
 
+    def test_mixed_bigint_integer_and_text(self) -> None:
+        """Test that mixed bigint, integer, and text values are detected as text/varchar."""
+        # Mix of bigint, integer, and text - should NOT be bigint, should be text
+        values = ["815230591184000000", "100", "hello", "42"]
+        result = detect_column_type(values)
+        # Should be text or varchar, NOT bigint or integer
+        assert result == "text" or result.startswith("varchar(")
+
+    def test_mixed_integer_and_text(self) -> None:
+        """Test that mixed integer and text values are detected as text/varchar."""
+        # Mix of integer and text - should NOT be integer, should be text
+        values = ["1", "100", "abc", "42"]
+        result = detect_column_type(values)
+        # Should be text or varchar, NOT integer
+        assert result == "text" or result.startswith("varchar(")
+
+    def test_mixed_bigint_at_start_with_text(self) -> None:
+        """Test that bigint at start with text later is detected as text/varchar."""
+        # Bigint first, then text - should be text/varchar
+        values = ["999999999999999999", "test", "100"]
+        result = detect_column_type(values)
+        assert result == "text" or result.startswith("varchar(")
+
     def test_detect_float(self) -> None:
         """Test detection of float values."""
         values = ["1.5", "2.3", "3.14", "100.0", "-5.5"]
