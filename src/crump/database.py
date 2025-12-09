@@ -196,6 +196,7 @@ class PostgreSQLBackend:
         type_mapping = {
             "integer": "INTEGER",
             "int": "INTEGER",
+            "bigint": "BIGINT",
             "float": "DOUBLE PRECISION",
             "double": "DOUBLE PRECISION",
             "date": "DATE",
@@ -520,6 +521,7 @@ class SQLiteBackend:
         type_mapping = {
             "integer": "INTEGER",
             "int": "INTEGER",
+            "bigint": "INTEGER",  # SQLite INTEGER is 8-byte signed, equivalent to BIGINT
             "float": "REAL",
             "double": "REAL",
             "date": "TEXT",

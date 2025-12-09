@@ -976,6 +976,51 @@ jobs:
         assert total_after[0][0] == 3  # IDs 1,3,4
 
 
+class TestBigintSupport:
+    """Integration tests for bigint data type support."""
+
+    @pytest.mark.parametrize("db_url", ["sqlite", "postgres"], indirect=True)
+    def test_sync_csv_with_bigint_values(self, tmp_path: Path, db_url: str) -> None:
+        """Test syncing CSV with bigint values (large integers)."""
+        from crump.config import ColumnMapping, CrumpJob
+
+        # Create CSV with bigint values
+        csv_file = tmp_path / "bigint_data.csv"
+        with open(csv_file, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=["id", "epoch", "value"])
+            writer.writeheader()
+            writer.writerow({"id": "1", "epoch": "815230591184000000", "value": "100"})
+            writer.writerow({"id": "2", "epoch": "815230591184000001", "value": "200"})
+            writer.writerow({"id": "3", "epoch": "999999999999999999", "value": "300"})
+
+        # Create job with explicit bigint type for epoch column
+        job = CrumpJob(
+            name="bigint_test",
+            target_table="bigint_table",
+            id_mapping=[ColumnMapping("id", "id", data_type="integer")],
+            columns=[
+                ColumnMapping("epoch", "epoch", data_type="bigint"),
+                ColumnMapping("value", "value", data_type="integer"),
+            ],
+        )
+
+        # Sync data
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
+        assert rows_synced == 3
+
+        # Verify data was inserted correctly
+        rows = execute_query(db_url, "SELECT id, epoch, value FROM bigint_table ORDER BY id")
+        assert len(rows) == 3
+        # Database returns integer types, not strings
+        assert rows[0] == (1, 815230591184000000, 100)
+        assert rows[1] == (2, 815230591184000001, 200)
+        assert rows[2] == (3, 999999999999999999, 300)
+
+        # Verify column types in database schema
+        columns = get_table_columns(db_url, "bigint_table")
+        assert "epoch" in columns
+
+
 class TestSamplePercentage:
     """Integration tests for sample_percentage feature."""
 

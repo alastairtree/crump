@@ -18,6 +18,28 @@ class TestDetectColumnType:
         values = ["1", "2", "3", "100", "-5"]
         assert detect_column_type(values) == "integer"
 
+    def test_detect_bigint(self) -> None:
+        """Test detection of bigint values (large integers)."""
+        values = ["815230591184000000", "999999999999999", "-999999999999999"]
+        assert detect_column_type(values) == "bigint"
+
+    def test_detect_bigint_example_value(self) -> None:
+        """Test detection of the specific example bigint value."""
+        values = ["815230591184000000"]
+        assert detect_column_type(values) == "bigint"
+
+    def test_integer_at_max_range(self) -> None:
+        """Test that values at INTEGER max range are still detected as integer."""
+        # PostgreSQL INTEGER max: 2147483647
+        values = ["2147483647", "2147483646", "-2147483648"]
+        assert detect_column_type(values) == "integer"
+
+    def test_bigint_just_over_integer_range(self) -> None:
+        """Test that values just over INTEGER range are detected as bigint."""
+        # Just over PostgreSQL INTEGER max
+        values = ["2147483648", "-2147483649"]
+        assert detect_column_type(values) == "bigint"
+
     def test_detect_float(self) -> None:
         """Test detection of float values."""
         values = ["1.5", "2.3", "3.14", "100.0", "-5.5"]
