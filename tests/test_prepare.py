@@ -74,6 +74,15 @@ class TestPrepareCommandIntegration:
         return csv_file
 
     @pytest.fixture
+    def bigint_csv(self, tmp_path: Path) -> Path:
+        """Create a CSV file with mixed integer and bigint values."""
+        csv_file = tmp_path / "bigint_data.csv"
+        csv_file.write_text(
+            "id,epoch,value\n1,815230591184000000,100\n2,815230591184000001,200\n3,100,300\n"
+        )
+        return csv_file
+
+    @pytest.fixture
     def second_csv(self, tmp_path: Path) -> Path:
         """Create a second sample CSV file."""
         csv_file = tmp_path / "user__info__123.csv"
@@ -196,6 +205,35 @@ class TestPrepareCommandIntegration:
         # Third run with force should succeed
         result3 = runner.invoke(prepare, [str(sample_csv), "--config", str(config_file), "--force"])
         assert result3.exit_code == 0
+
+    def test_prepare_detects_bigint_type(self, bigint_csv: Path, tmp_path: Path) -> None:
+        """Test that prepare command detects bigint data type for large integers."""
+        from click.testing import CliRunner
+
+        from crump.cli_prepare import prepare
+        from crump.config import CrumpConfig
+
+        config_file = tmp_path / "crump_config.yml"
+        runner = CliRunner()
+
+        result = runner.invoke(prepare, [str(bigint_csv), "--config", str(config_file)])
+
+        assert result.exit_code == 0
+        assert config_file.exists()
+
+        # Load config and verify bigint type was detected
+        config = CrumpConfig.from_yaml(config_file)
+        job = config.jobs["bigint_data"]
+
+        # Check that epoch column has bigint type
+        epoch_column = None
+        for col in job.columns or []:
+            if col.csv_column == "epoch":
+                epoch_column = col
+                break
+
+        assert epoch_column is not None, "epoch column not found in job config"
+        assert epoch_column.data_type == "bigint", f"Expected bigint, got {epoch_column.data_type}"
 
 
 class TestDetectFilenamePatterns:

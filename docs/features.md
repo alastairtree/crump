@@ -448,12 +448,13 @@ Automatically detects column types from CSV data.
 
 ### Supported Types
 
-| Type | Example Values |
-|------|---------------|
-| INTEGER | `1`, `42`, `-100` |
-| FLOAT | `3.14`, `-0.5`, `1.23e-4` |
-| DATE | `2024-01-15`, `2024-12-31` |
-| TEXT | `Alice`, `alice@example.com` |
+| Type | Example Values | Notes |
+|------|---------------|-------|
+| INTEGER | `1`, `42`, `-100`, `2147483647` | PostgreSQL INTEGER (-2^31 to 2^31-1) |
+| BIGINT | `815230591184000000`, `9223372036854775807` | Large integers exceeding INTEGER range |
+| FLOAT | `3.14`, `-0.5`, `1.23e-4` | Floating point numbers |
+| DATE | `2024-01-15`, `2024-12-31` | Date values |
+| TEXT | `Alice`, `alice@example.com` | Text strings |
 
 ### Nullable Detection
 

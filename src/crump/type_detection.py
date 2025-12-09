@@ -13,7 +13,7 @@ def detect_column_type(values: list[str]) -> str:
         values: List of string values from the column (excluding empty strings)
 
     Returns:
-        Detected type: 'integer', 'float', 'date', 'datetime', 'text', or 'varchar(N)'
+        Detected type: 'bigint', 'integer', 'float', 'date', 'datetime', 'text', or 'varchar(N)'
     """
     if not values:
         return "text"
@@ -25,7 +25,12 @@ def detect_column_type(values: list[str]) -> str:
     if not non_empty:
         return "text"
 
-    # Check if all values are integers
+    # Check if ANY value is a bigint AND all values are numeric (integers)
+    # This handles mixed cases where some values are small integers and some are large
+    if any(_is_bigint(v) for v in non_empty) and all(_is_any_integer(v) for v in non_empty):
+        return "bigint"
+
+    # Check if all values are integers (within INTEGER range)
     if all(_is_integer(v) for v in non_empty):
         return "integer"
 
@@ -50,10 +55,43 @@ def detect_column_type(values: list[str]) -> str:
 
 
 def _is_integer(value: str) -> bool:
-    """Check if a string represents an integer."""
+    """Check if a string represents an integer within PostgreSQL INTEGER range.
+
+    PostgreSQL INTEGER range: -2147483648 to 2147483647 (-2^31 to 2^31-1)
+    """
     try:
-        int(value)
-        return True
+        int_val = int(value)
+        # Check if value fits in PostgreSQL INTEGER range
+        return -2147483648 <= int_val <= 2147483647
+    except ValueError:
+        return False
+
+
+def _is_bigint(value: str) -> bool:
+    """Check if a string represents a large integer that requires BIGINT.
+
+    This checks if the value is an integer but exceeds the PostgreSQL INTEGER range.
+    PostgreSQL BIGINT range: -9223372036854775808 to 9223372036854775807 (-2^63 to 2^63-1)
+    """
+    try:
+        int_val = int(value)
+        # Check if value exceeds INTEGER range but fits in BIGINT range
+        return (int_val < -2147483648 or int_val > 2147483647) and (
+            -9223372036854775808 <= int_val <= 9223372036854775807
+        )
+    except ValueError:
+        return False
+
+
+def _is_any_integer(value: str) -> bool:
+    """Check if a string represents any integer (within INTEGER or BIGINT range).
+
+    This returns True for both small integers and large integers.
+    """
+    try:
+        int_val = int(value)
+        # Check if value fits in BIGINT range
+        return -9223372036854775808 <= int_val <= 9223372036854775807
     except ValueError:
         return False
 
