@@ -25,11 +25,12 @@ def detect_column_type(values: list[str]) -> str:
     if not non_empty:
         return "text"
 
-    # Check if all values are bigints (large integers)
-    if all(_is_bigint(v) for v in non_empty):
+    # Check if ANY value is a bigint (exceeds INTEGER range)
+    # This handles mixed cases where some values are small integers and some are large
+    if any(_is_bigint(v) for v in non_empty):
         return "bigint"
 
-    # Check if all values are integers
+    # Check if all values are integers (within INTEGER range)
     if all(_is_integer(v) for v in non_empty):
         return "integer"
 

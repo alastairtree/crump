@@ -75,9 +75,11 @@ class TestPrepareCommandIntegration:
 
     @pytest.fixture
     def bigint_csv(self, tmp_path: Path) -> Path:
-        """Create a CSV file with bigint values."""
+        """Create a CSV file with mixed integer and bigint values."""
         csv_file = tmp_path / "bigint_data.csv"
-        csv_file.write_text("id,epoch,value\n1,815230591184000000,100\n2,815230591184000001,200\n")
+        csv_file.write_text(
+            "id,epoch,value\n1,815230591184000000,100\n2,815230591184000001,200\n3,100,300\n"
+        )
         return csv_file
 
     @pytest.fixture

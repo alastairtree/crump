@@ -40,6 +40,18 @@ class TestDetectColumnType:
         values = ["2147483648", "-2147483649"]
         assert detect_column_type(values) == "bigint"
 
+    def test_mixed_integer_and_bigint(self) -> None:
+        """Test that mixed small and large integers are detected as bigint."""
+        # Mix of regular integers and bigints - should be classified as bigint
+        values = ["1", "100", "815230591184000000", "42"]
+        assert detect_column_type(values) == "bigint"
+
+    def test_mixed_with_bigint_at_end(self) -> None:
+        """Test bigint detection when large value appears later in the data."""
+        # Bigint value at the end - should still be detected
+        values = ["1", "2", "3", "4", "5", "999999999999999999"]
+        assert detect_column_type(values) == "bigint"
+
     def test_detect_float(self) -> None:
         """Test detection of float values."""
         values = ["1.5", "2.3", "3.14", "100.0", "-5.5"]

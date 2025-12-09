@@ -1020,6 +1020,46 @@ class TestBigintSupport:
         columns = get_table_columns(db_url, "bigint_table")
         assert "epoch" in columns
 
+    @pytest.mark.parametrize("db_url", ["sqlite", "postgres"], indirect=True)
+    def test_sync_csv_with_mixed_integer_and_bigint_values(
+        self, tmp_path: Path, db_url: str
+    ) -> None:
+        """Test syncing CSV with mixed regular integers and bigint values."""
+        from crump.config import ColumnMapping, CrumpJob
+
+        # Create CSV with mixed small and large integer values
+        csv_file = tmp_path / "mixed_bigint_data.csv"
+        with open(csv_file, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=["id", "epoch", "value"])
+            writer.writeheader()
+            writer.writerow({"id": "1", "epoch": "100", "value": "10"})  # Small integer
+            writer.writerow({"id": "2", "epoch": "815230591184000000", "value": "200"})  # Bigint
+            writer.writerow({"id": "3", "epoch": "500", "value": "30"})  # Small integer
+            writer.writerow({"id": "4", "epoch": "999999999999999999", "value": "400"})  # Bigint
+
+        # Create job with explicit bigint type for epoch column
+        job = CrumpJob(
+            name="mixed_bigint_test",
+            target_table="mixed_bigint_table",
+            id_mapping=[ColumnMapping("id", "id", data_type="integer")],
+            columns=[
+                ColumnMapping("epoch", "epoch", data_type="bigint"),
+                ColumnMapping("value", "value", data_type="integer"),
+            ],
+        )
+
+        # Sync data
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
+        assert rows_synced == 4
+
+        # Verify data was inserted correctly - mix of small and large values
+        rows = execute_query(db_url, "SELECT id, epoch, value FROM mixed_bigint_table ORDER BY id")
+        assert len(rows) == 4
+        assert rows[0] == (1, 100, 10)  # Small value
+        assert rows[1] == (2, 815230591184000000, 200)  # Large value
+        assert rows[2] == (3, 500, 30)  # Small value
+        assert rows[3] == (4, 999999999999999999, 400)  # Large value
+
 
 class TestSamplePercentage:
     """Integration tests for sample_percentage feature."""
