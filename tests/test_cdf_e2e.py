@@ -46,6 +46,7 @@ class TestCDFEndToEndWorkflow:
             sync,
             [
                 str(sample_cdf),
+                "--config",
                 str(config_file),
                 "--job",
                 first_job_name,
@@ -119,6 +120,7 @@ class TestCDFEndToEndWorkflow:
             sync,
             [
                 str(sample_cdf),
+                "--config",
                 str(config_file),
                 "--job",
                 first_job_name,

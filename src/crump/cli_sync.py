@@ -61,7 +61,13 @@ def _extract_cdf_and_find_tabular_files(
 
 @click.command()
 @click.argument("file_path", type=click.Path(exists=True, path_type=Path), required=True)
-@click.argument("config", type=click.Path(exists=True, path_type=Path), required=True)
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="Path to the YAML configuration file",
+)
 @click.option(
     "--job",
     "-j",
@@ -111,36 +117,39 @@ def sync(
 
     Arguments:
         FILE_PATH: Path to the CSV, Parquet, or CDF file to sync (required)
-        CONFIG: Path to the YAML configuration file (required)
+
+    Options:
+        --config, -c: Path to the YAML configuration file (required)
+        --job, -j: Name of the job to run from config (optional - auto-detected if single job)
 
     Examples:
         # Sync CSV file with explicit job name
-        crump sync data.csv crump_config.yml --job my_job --db-url postgresql://localhost/mydb
+        crump sync data.csv --config crump_config.yml --job my_job --db-url postgresql://localhost/mydb
 
         # Sync Parquet file
-        crump sync data.parquet crump_config.yml --job my_job --db-url postgresql://localhost/mydb
+        crump sync data.parquet -c crump_config.yml -j my_job --db-url postgresql://localhost/mydb
 
         # Sync with auto-detected job (when config has only one job)
-        crump sync data.csv crump_config.yml --db-url postgresql://localhost/mydb
+        crump sync data.csv --config crump_config.yml --db-url postgresql://localhost/mydb
 
         # Sync a CDF file (extracts to CSV automatically)
-        crump sync data.cdf crump_config.yml --job my_job --db-url postgresql://localhost/mydb
+        crump sync data.cdf -c crump_config.yml -j my_job --db-url postgresql://localhost/mydb
 
         # Sync CDF with limited records (useful for testing)
-        crump sync data.cdf crump_config.yml --job my_job --db-url postgresql://localhost/mydb --max-records 200
+        crump sync data.cdf --config crump_config.yml --job my_job --db-url postgresql://localhost/mydb --max-records 200
 
         # Using environment variable
         export DATABASE_URL=postgresql://localhost/mydb
-        crump sync data.parquet crump_config.yml --job my_job
+        crump sync data.parquet --config crump_config.yml --job my_job
 
         # Dry-run mode to preview changes
-        crump sync data.parquet crump_config.yml --job my_job --dry-run
+        crump sync data.parquet -c crump_config.yml -j my_job --dry-run
 
         # Dry-run with limited records from CDF and auto-detected job
-        crump sync data.cdf crump_config.yml --dry-run --max-records 100
+        crump sync data.cdf --config crump_config.yml --dry-run --max-records 100
 
         # Enable history tracking
-        crump sync data.parquet crump_config.yml --job my_job --history
+        crump sync data.parquet --config crump_config.yml --job my_job --history
     """
     temp_dir: Path | None = None
     temp_csv_files: list[Path] = []

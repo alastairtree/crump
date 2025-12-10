@@ -428,11 +428,11 @@ When `use_to_delete_old_rows: true` is set, crump will:
 
 ```bash
 # Day 1: Sync sales for 2024-01-15
-crump sync sales_2024-01-15.csv crump_config.yml daily_sales
+crump sync sales_2024-01-15.csv --config crump_config.yml --job daily_sales
 # Result: Inserts 100 rows with sync_date = '2024-01-15'
 
 # Day 2: Re-sync same date with corrections (only 95 rows)
-crump sync sales_2024-01-15-corrected.csv crump_config.yml daily_sales
+crump sync sales_2024-01-15-corrected.csv --config crump_config.yml --job daily_sales
 # Result: Updates 95 rows, deletes 5 stale rows for 2024-01-15
 #         Rows for other dates are untouched
 ```

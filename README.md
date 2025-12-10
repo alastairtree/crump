@@ -51,14 +51,14 @@ export DATABASE_URL="sqlite:///test.db"
 # export DATABASE_URL="postgresql://user:pass@localhost:5432/mydb"
 
 # preview changes first (requires --db-url or DATABASE_URL)
-crump sync users.csv crump_config.yml --job users_sync --dry-run
+crump sync users.csv --config crump_config.yml --job users_sync --dry-run
 
 # Sync the file to database
-crump sync users.csv crump_config.yml --job users_sync
+crump sync users.csv --config crump_config.yml --job users_sync
 
 # Later that day the v2 of the file arrives
 # Sync the new file, old records from v1 are removed automatically, updates are applied to rows that match based on primary key
-crump sync users_v2.csv crump_config.yml --job users_sync
+crump sync users_v2.csv --config crump_config.yml --job users_sync
 ```
 
 ## Example Configuration
