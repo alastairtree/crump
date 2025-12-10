@@ -230,11 +230,14 @@ class PostgreSQLBackend:
         self.commit()
 
     def get_existing_columns(self, table_name: str) -> set[str]:
-        """Get set of existing column names in a table."""
+        """Get set of existing column names in a table.
+
+        Uses case-insensitive comparison to handle quoted identifiers that preserve case.
+        """
         query = """
             SELECT column_name
             FROM information_schema.columns
-            WHERE table_name = %s
+            WHERE LOWER(table_name) = LOWER(%s)
         """
         results = self.fetchall(query, (table_name,))
         return {row[0].lower() for row in results}
@@ -419,11 +422,14 @@ class PostgreSQLBackend:
         return deleted_count
 
     def get_existing_indexes(self, table_name: str) -> set[str]:
-        """Get set of existing index names for a table."""
+        """Get set of existing index names for a table.
+
+        Uses case-insensitive comparison to handle quoted identifiers that preserve case.
+        """
         query = """
             SELECT indexname
             FROM pg_indexes
-            WHERE tablename = %s
+            WHERE LOWER(tablename) = LOWER(%s)
         """
         results = self.fetchall(query, (table_name,))
         return {row[0].lower() for row in results}
@@ -449,6 +455,8 @@ class PostgreSQLBackend:
     def table_exists(self, table_name: str) -> bool:
         """Check if a table exists in the database.
 
+        Uses case-insensitive comparison to handle quoted identifiers that preserve case.
+
         Args:
             table_name: Name of the table to check
 
@@ -458,7 +466,7 @@ class PostgreSQLBackend:
         query = """
             SELECT EXISTS (
                 SELECT FROM information_schema.tables
-                WHERE table_name = %s
+                WHERE LOWER(table_name) = LOWER(%s)
             )
         """
         result = self.fetchall(query, (table_name,))
