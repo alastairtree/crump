@@ -40,6 +40,10 @@ jobs:
   test:
     name: Test on ${{ matrix.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+      pull-requests: write
+      checks: write
     strategy:
       fail-fast: false
       matrix:
@@ -74,15 +78,38 @@ jobs:
         run: uv sync --all-extras
 
       - name: Run tests with coverage
-        run: uv run pytest
+        run: uv run pytest --cov=crump --cov-report=xml --cov-report=term --junitxml=test-results.xml
+
+      - name: Upload test results
+        if: always() && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        uses: actions/upload-artifact@v5
+        with:
+          name: test-results-linux-3.14
+          path: test-results.xml
+
+      - name: Publish Test Report
+        if: always() && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: test-results.xml
+          check_name: 'Test Results (Linux 3.14)'
 
       - name: Upload coverage to Codecov
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
         uses: codecov/codecov-action@v5
         with:
-          file: ./coverage.xml
+          files: ./coverage.xml
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Coverage comment
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        uses: py-cov-action/python-coverage-comment-action@v3
+        with:
+          GITHUB_TOKEN: ${{ github.token }}
+          COVERAGE_DATA_BRANCH: ${{ github.head_ref || github.ref_name }}
+          MINIMUM_GREEN: 80
+          MINIMUM_ORANGE: 70
 
   build:
     name: Build package
