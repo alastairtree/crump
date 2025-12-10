@@ -72,6 +72,7 @@ filterwarnings = [
 [tool.coverage.run]
 source = ["src/crump"]
 omit = ["*/tests/*", "*/__pycache__/*"]
+relative_files = true
 
 [tool.coverage.report]
 exclude_lines = [
