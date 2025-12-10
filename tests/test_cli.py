@@ -33,7 +33,7 @@ class TestSyncCommand:
         assert result.exit_code == 0
         assert "Sync a CSV" in result.output
         assert "FILE_PATH" in result.output
-        assert "CONFIG" in result.output
+        assert "--config" in result.output
         assert "--job" in result.output
 
     def test_sync_missing_arguments(self, cli_runner: CliRunner) -> None:
@@ -125,7 +125,9 @@ class TestSyncCommand:
         config_file = tmp_path / "crump_config.yml"
         create_config_file(config_file, "test", "test", {"id": "id"})
 
-        result = cli_runner.invoke(main, ["sync", str(csv_file), "--config", str(config_file), "--job", "test"])
+        result = cli_runner.invoke(
+            main, ["sync", str(csv_file), "--config", str(config_file), "--job", "test"]
+        )
         assert result.exit_code != 0
         assert "Missing option" in result.output or "required" in result.output.lower()
 

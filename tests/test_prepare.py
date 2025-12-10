@@ -635,7 +635,15 @@ class TestCDFEndToEndWorkflow:
 
         sync_result = runner.invoke(
             sync,
-            [str(first_csv), str(config_file), "--job", first_job_name, "--db-url", db_url],
+            [
+                str(first_csv),
+                "--config",
+                str(config_file),
+                "--job",
+                first_job_name,
+                "--db-url",
+                db_url,
+            ],
         )
 
         assert sync_result.exit_code == 0, f"Sync failed: {sync_result.output}"
@@ -716,7 +724,15 @@ class TestCDFEndToEndWorkflow:
 
         sync_result = runner.invoke(
             sync,
-            [str(first_csv), str(config_file), "--job", first_job_name, "--db-url", db_url],
+            [
+                str(first_csv),
+                "--config",
+                str(config_file),
+                "--job",
+                first_job_name,
+                "--db-url",
+                db_url,
+            ],
         )
         assert sync_result.exit_code == 0, f"Sync failed: {sync_result.output}"
 

@@ -364,7 +364,7 @@ Preview all changes without modifying the database.
 
 ```bash
 export DATABASE_URL="sqlite:///test.db"
-crump sync data.csv --config crump_config.yml --job --job my_job --dry-run
+crump sync data.csv --config crump_config.yml --job my_job --dry-run
 ```
 
 ### What it Shows
