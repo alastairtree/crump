@@ -41,7 +41,7 @@ jobs:
     name: Test on ${{ matrix.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
       checks: write
     strategy:
@@ -98,7 +98,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
         uses: codecov/codecov-action@v5
         with:
-          file: ./coverage.xml
+          files: ./coverage.xml
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
@@ -107,6 +107,7 @@ jobs:
         uses: py-cov-action/python-coverage-comment-action@v3
         with:
           GITHUB_TOKEN: ${{ github.token }}
+          COVERAGE_DATA_BRANCH: ${{ github.head_ref || github.ref_name }}
           MINIMUM_GREEN: 80
           MINIMUM_ORANGE: 70
 
