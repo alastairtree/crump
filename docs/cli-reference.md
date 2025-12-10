@@ -22,7 +22,7 @@ crump [OPTIONS] COMMAND [ARGS]...
 Sync a CSV, Parquet, or CDF file to the database using a configuration.
 
 ```bash
-crump sync FILE_PATH CONFIG JOB [OPTIONS]
+crump sync FILE_PATH [OPTIONS]
 ```
 
 #### Arguments
@@ -30,13 +30,13 @@ crump sync FILE_PATH CONFIG JOB [OPTIONS]
 | Argument | Type | Required | Description |
 |----------|------|----------|-------------|
 | `FILE_PATH` | Path | Yes | Path to the CSV, Parquet, or CDF file to sync |
-| `CONFIG` | Path | Yes | Path to the YAML configuration file |
-| `JOB` | String | Yes | Name of the job to run from config |
 
 #### Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
+| `--config, -c` | Path | - | Path to the YAML configuration file (required) |
+| `--job, -j` | String | Auto-detect | Name of the job to run from config (optional if config has only one job) |
 | `--db-url TEXT` | String | `$DATABASE_URL` | PostgreSQL connection string |
 | `--dry-run` | Flag | False | Simulate sync without making database changes |
 | `--max-records INTEGER` | Integer | None (all) | Maximum number of records to extract per variable from CDF files |
@@ -53,50 +53,56 @@ crump sync FILE_PATH CONFIG JOB [OPTIONS]
 **Basic CSV sync:**
 
 ```bash
-crump sync data.csv crump_config.yml my_job --db-url postgresql://localhost/mydb
+crump sync data.csv --config crump_config.yml --job my_job --db-url postgresql://localhost/mydb
 ```
 
-**Sync Parquet file:**
+**Sync Parquet file (using short option names):**
 
 ```bash
-crump sync data.parquet crump_config.yml my_job --db-url postgresql://localhost/mydb
+crump sync data.parquet -c crump_config.yml -j my_job --db-url postgresql://localhost/mydb
+```
+
+**Sync with auto-detected job (when config has only one job):**
+
+```bash
+crump sync data.csv --config crump_config.yml --db-url postgresql://localhost/mydb
 ```
 
 **Sync CDF file (automatic extraction):**
 
 ```bash
-crump sync science_data.cdf crump_config.yml vectors --db-url postgresql://localhost/mydb
+crump sync science_data.cdf -c crump_config.yml -j vectors --db-url postgresql://localhost/mydb
 ```
 
 **Sync CDF with limited records (for testing):**
 
 ```bash
-crump sync science_data.cdf crump_config.yml vectors --db-url postgresql://localhost/mydb --max-records 200
+crump sync science_data.cdf --config crump_config.yml --job vectors --db-url postgresql://localhost/mydb --max-records 200
 ```
 
 **Using environment variable:**
 
 ```bash
 export DATABASE_URL=postgresql://localhost/mydb
-crump sync data.csv crump_config.yml my_job
+crump sync data.csv --config crump_config.yml --job my_job
 ```
 
 **Dry-run mode:**
 
 ```bash
-crump sync data.csv crump_config.yml my_job --dry-run
+crump sync data.csv -c crump_config.yml -j my_job --dry-run
 ```
 
 **Dry-run CDF with limited records:**
 
 ```bash
-crump sync data.cdf crump_config.yml my_job --dry-run --max-records 100
+crump sync data.cdf --config crump_config.yml --job my_job --dry-run --max-records 100
 ```
 
 **Enable history tracking:**
 
 ```bash
-crump sync data.csv crump_config.yml my_job --history
+crump sync data.csv --config crump_config.yml --job my_job --history
 ```
 
 #### Output
@@ -511,10 +517,10 @@ crump prepare data.csv --config crump_config.yml --job my_job
 cat crump_config.yml
 
 # 3. Test with dry-run
-crump sync data.csv crump_config.yml my_job --dry-run
+crump sync data.csv --config crump_config.yml --job my_job --dry-run
 
 # 4. Run actual sync
-crump sync data.csv crump_config.yml my_job
+crump sync data.csv --config crump_config.yml --job my_job
 ```
 
 ### Daily Updates
@@ -524,7 +530,7 @@ crump sync data.csv crump_config.yml my_job
 export DATABASE_URL="postgresql://localhost/mydb"
 
 # Daily sync (idempotent)
-crump sync sales_$(date +%Y-%m-%d).csv crump_config.yml daily_sales
+crump sync sales_$(date +%Y-%m-%d).csv --config crump_config.yml --job daily_sales
 ```
 
 ### Batch Processing
@@ -532,7 +538,7 @@ crump sync sales_$(date +%Y-%m-%d).csv crump_config.yml daily_sales
 ```bash
 # Process multiple files
 for file in data/*.csv; do
-  crump sync "$file" crump_config.yml my_job
+  crump sync "$file" --config crump_config.yml --job my_job
 done
 ```
 
@@ -546,7 +552,7 @@ crump prepare new_data.csv --config crump_config.yml --job my_job --force
 git diff crump_config.yml
 
 # Test new config
-crump sync new_data.csv crump_config.yml my_job --dry-run
+crump sync new_data.csv --config crump_config.yml --job my_job --dry-run
 ```
 
 ## Troubleshooting
