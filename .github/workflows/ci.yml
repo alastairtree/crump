@@ -82,7 +82,7 @@ jobs:
 
       - name: Upload test results
         if: always() && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: test-results-linux-3.14
           path: test-results.xml
@@ -133,7 +133,7 @@ jobs:
         run: python -m build
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: dist
           path: dist/
