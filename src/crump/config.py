@@ -452,7 +452,7 @@ class CrumpConfig:
                     # support regex as well but check if it is a valid regex
                     try:
                         pattern = re.compile(job.filename_match)
-                        if pattern.match(filename):
+                        if pattern.search(filename):
                             return (job, job_name)
                     except re.error:
                         continue
