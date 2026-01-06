@@ -229,31 +229,6 @@ def _extract_with_config(
     # Load configuration
     crump_config = CrumpConfig.from_yaml(config_path)
 
-    # Get the specified job or auto-detect if there's only one
-    try:
-        job_result = crump_config.get_job_or_auto_detect(job_name)
-        if not job_result:
-            if job_name:
-                available_jobs = ", ".join(crump_config.jobs.keys())
-                console.print(f"[red]Error:[/red] Job '{job_name}' not found in config")
-                console.print(f"[dim]Available jobs: {available_jobs}[/dim]")
-            else:
-                console.print("[red]Error:[/red] Config file contains no jobs")
-            raise click.Abort()
-
-        crump_job, detected_job_name = job_result
-
-        # Inform user if we auto-detected the job
-        if job_name is None:
-            console.print(f"[dim]Auto-detected job: {detected_job_name}[/dim]")
-
-    except ValueError as e:
-        # Multiple jobs found, need explicit job name
-        available_jobs = ", ".join(crump_config.jobs.keys())
-        console.print(f"[red]Error:[/red] {e}")
-        console.print(f"[dim]Available jobs: {available_jobs}[/dim]")
-        raise click.Abort() from e
-
     # Determine output directory
     output_dir = output_path if output_path else Path.cwd()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -287,6 +262,31 @@ def _extract_with_config(
 
     for cdf_file in files:
         console.print(f"[bold]Processing:[/bold] {cdf_file.name}")
+
+        # Get the specified job or auto-detect if there's only one
+        try:
+            job_result = crump_config.get_job_or_auto_detect(job_name, filename=cdf_file.as_posix())
+            if not job_result:
+                if job_name:
+                    available_jobs = ", ".join(crump_config.jobs.keys())
+                    console.print(f"[red]Error:[/red] Job '{job_name}' not found in config")
+                    console.print(f"[dim]Available jobs: {available_jobs}[/dim]")
+                else:
+                    console.print("[red]Error:[/red] Config file contains no jobs")
+                raise click.Abort()
+
+            crump_job, detected_job_name = job_result
+
+            # Inform user if we auto-detected the job
+            if job_name is None:
+                console.print(f"[dim]Auto-detected job: {detected_job_name}[/dim]")
+
+        except ValueError as e:
+            # Multiple jobs found, need explicit job name
+            available_jobs = ", ".join(crump_config.jobs.keys())
+            console.print(f"[red]Error:[/red] {e}")
+            console.print(f"[dim]Available jobs: {available_jobs}[/dim]")
+            raise click.Abort() from e
 
         try:
             results = extract_cdf_with_config(

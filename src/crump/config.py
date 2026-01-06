@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import importlib
 import re
 from pathlib import Path
@@ -346,6 +347,7 @@ class CrumpJob:
         target_table: str,
         id_mapping: list[ColumnMapping],
         columns: list[ColumnMapping] | None = None,
+        filename_match: str | None = None,
         filename_to_column: FilenameToColumn | None = None,
         indexes: list[Index] | None = None,
         sample_percentage: float | None = None,
@@ -358,6 +360,7 @@ class CrumpJob:
             id_mapping: List of mappings for ID columns (supports compound primary keys)
             columns: List of column mappings to sync (all columns if None)
             filename_to_column: Optional filename-to-column extraction configuration
+            filename_match: Allow automatic job selection from config file if this is specified
             indexes: Optional list of database indexes to create
             sample_percentage: Optional percentage of rows to sample (0-100). If None or 100,
                               syncs all rows. Values like 10 mean 1 in every 10 rows.
@@ -370,6 +373,7 @@ class CrumpJob:
         self.filename_to_column = filename_to_column
         self.indexes = indexes or []
         self.sample_percentage = sample_percentage
+        self.filename_match = filename_match
 
         # Validate sample_percentage
         if sample_percentage is not None and not (0 <= sample_percentage <= 100):
@@ -405,7 +409,9 @@ class CrumpConfig:
         """
         return self.jobs.get(name)
 
-    def get_job_or_auto_detect(self, name: str | None = None) -> tuple[CrumpJob, str] | None:
+    def get_job_or_auto_detect(
+        self, name: str | None = None, filename: str | None = None
+    ) -> tuple[CrumpJob, str] | None:
         """Get a job by name, or auto-detect if there's only one job.
 
         Args:
@@ -433,10 +439,30 @@ class CrumpConfig:
             job_name = next(iter(self.jobs.keys()))
             return (self.jobs[job_name], job_name)
 
+        if filename is not None:
+            # Try to auto-detect job based on filename_match
+            for job_name, job in self.jobs.items():
+                if job.filename_match:
+                    # match using the full path as a string
+                    if fnmatch.fnmatch(filename, job.filename_match):
+                        return (job, job_name)
+                    # or match using just the filename part
+                    if fnmatch.fnmatch(Path(filename).name, job.filename_match):
+                        return (job, job_name)
+                    # support regex as well but check if it is a valid regex
+                    try:
+                        pattern = re.compile(job.filename_match)
+                        if pattern.match(filename):
+                            return (job, job_name)
+                    except re.error:
+                        continue
+
+            # No matching job found
+
         # Multiple jobs - cannot auto-detect
         raise ValueError(
-            f"Config contains {len(self.jobs)} jobs. "
-            "Please specify --job to select which one to use."
+            f"Config contains {len(self.jobs)} jobs and unable to match one automatically. "
+            "Please specify --job to select which one to use or configure filename_match in the job config."
         )
 
     @classmethod
@@ -748,12 +774,19 @@ class CrumpConfig:
                     f"Job '{name}' sample_percentage must be between 0 and 100, got {sample_percentage}"
                 )
 
+        filename_match = None
+        if "filename_match" in job_data and job_data["filename_match"]:
+            filename_match = job_data["filename_match"]
+            if not isinstance(filename_match, str):
+                raise ValueError(f"Job '{name}' filename_match must be a string")
+
         return CrumpJob(
             name=name,
             target_table=job_data["target_table"],
             id_mapping=id_mapping,
             columns=columns if columns else None,
             filename_to_column=filename_to_column,
+            filename_match=filename_match,
             indexes=indexes if indexes else None,
             sample_percentage=sample_percentage,
         )
