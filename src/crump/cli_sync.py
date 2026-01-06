@@ -160,7 +160,7 @@ def sync(
 
         # Get the specified job or auto-detect if there's only one
         try:
-            result = crump_config.get_job_or_auto_detect(job)
+            result = crump_config.get_job_or_auto_detect(job, filename=file_path.as_posix())
             if not result:
                 if job:
                     available_jobs = ", ".join(crump_config.jobs.keys())
