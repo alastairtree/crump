@@ -175,9 +175,7 @@ def _is_epoch_variable(var_info: Any, var_name: str, data: np.ndarray | Any) -> 
         return True
 
     # Fallback: check if variable name contains "epoch" and data is int64
-    return (
-        "epoch" in var_name.lower() and isinstance(data, np.ndarray) and data.dtype == np.int64
-    )
+    return "epoch" in var_name.lower() and isinstance(data, np.ndarray) and data.dtype == np.int64
 
 
 def _convert_epoch_to_datetime(data: np.ndarray) -> np.ndarray:
