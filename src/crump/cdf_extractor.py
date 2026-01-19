@@ -95,7 +95,12 @@ def _expand_variable_to_columns(
     if not variable.is_array:
         # 1D variable - single column
         if isinstance(variable.data, np.ndarray):
-            data = variable.data[:actual_records].tolist()
+            data = variable.data[:actual_records]
+            # Convert datetime64 to ISO format strings
+            if np.issubdtype(data.dtype, np.datetime64):
+                data = [str(dt) for dt in data]
+            else:
+                data = data.tolist()
         else:
             data = [variable.data]
         data_columns = [data]
@@ -103,7 +108,12 @@ def _expand_variable_to_columns(
         # 2D variable - multiple columns
         data_columns = []
         for i in range(variable.array_size):
-            column_data = variable.data[:actual_records, i].tolist()
+            column_data = variable.data[:actual_records, i]
+            # Convert datetime64 to ISO format strings
+            if np.issubdtype(column_data.dtype, np.datetime64):
+                column_data = [str(dt) for dt in column_data]
+            else:
+                column_data = column_data.tolist()
             data_columns.append(column_data)
 
     return column_names, data_columns, actual_records

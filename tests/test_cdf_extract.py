@@ -53,6 +53,83 @@ def test_read_cdf_variables_imap(imap_cdf_file: Path) -> None:
     assert "vector_magnitude" in var_names
 
 
+def test_epoch_conversion_imap(imap_cdf_file: Path) -> None:
+    """Test that EPOCH values are converted to datetime64."""
+    import numpy as np
+
+    variables = read_cdf_variables(imap_cdf_file)
+
+    # Find the epoch variable
+    epoch_var = next((v for v in variables if v.name == "epoch"), None)
+    assert epoch_var is not None, "epoch variable not found"
+
+    # Check that epoch data is datetime64
+    assert isinstance(epoch_var.data, np.ndarray)
+    assert np.issubdtype(epoch_var.data.dtype, np.datetime64), f"Expected datetime64, got {epoch_var.data.dtype}"
+
+    # Check that values are valid datetimes
+    # The filename says 20251010, so dates should be around October 10, 2025
+    first_value = epoch_var.data[0]
+    first_str = str(first_value)
+    assert "2025-10" in first_str, f"Expected date in October 2025, got {first_str}"
+
+
+def test_epoch_conversion_solo(solo_cdf_file: Path) -> None:
+    """Test that EPOCH values are converted to datetime64 in Solar Orbiter file."""
+    import numpy as np
+
+    variables = read_cdf_variables(solo_cdf_file)
+
+    # Find the EPOCH variable
+    epoch_var = next((v for v in variables if v.name == "EPOCH"), None)
+    assert epoch_var is not None, "EPOCH variable not found"
+
+    # Check that EPOCH data is datetime64
+    assert isinstance(epoch_var.data, np.ndarray)
+    assert np.issubdtype(epoch_var.data.dtype, np.datetime64), f"Expected datetime64, got {epoch_var.data.dtype}"
+
+    # Check that values are valid datetimes
+    # The filename says 20241225, so dates should be around December 25, 2024
+    first_value = epoch_var.data[0]
+    first_str = str(first_value)
+    assert "2024-12" in first_str, f"Expected date in December 2024, got {first_str}"
+
+
+def test_epoch_csv_extraction(imap_cdf_file: Path, tmp_path: Path) -> None:
+    """Test that EPOCH values are written as datetime strings in CSV."""
+    results = extract_cdf_to_tabular_file(
+        cdf_file_path=imap_cdf_file,
+        output_dir=tmp_path,
+        filename_template="[SOURCE_FILE]-[VARIABLE_NAME].csv",
+        automerge=True,
+        append=False,
+        variable_names=None,
+        max_records=10,
+    )
+
+    # Find a result that has the epoch column
+    epoch_result = None
+    for result in results:
+        if "epoch" in result.column_names:
+            epoch_result = result
+            break
+
+    assert epoch_result is not None, "No CSV file contains epoch column"
+
+    # Read the CSV and check epoch values
+    with open(epoch_result.output_file, encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+
+        assert len(rows) > 0, "CSV has no data rows"
+
+        # Check that epoch values are datetime strings, not integers
+        first_epoch = rows[0]["epoch"]
+        assert "2025-10" in first_epoch, f"Expected datetime string with 2025-10, got {first_epoch}"
+        assert "T" in first_epoch, f"Expected ISO format datetime with 'T', got {first_epoch}"
+        assert ":" in first_epoch, f"Expected time component with ':', got {first_epoch}"
+
+
 def test_extract_with_automerge(solo_cdf_file: Path, tmp_path: Path) -> None:
     """Test extracting CDF with automerge enabled."""
     results = extract_cdf_to_tabular_file(
