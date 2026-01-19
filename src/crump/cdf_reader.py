@@ -168,14 +168,16 @@ def _is_epoch_variable(var_info: Any, var_name: str, data: np.ndarray | Any) -> 
         return True
 
     # Check if data type description indicates EPOCH
-    if hasattr(var_info, "Data_Type_Description") and "TIME_TT2000" in var_info.Data_Type_Description:
+    if (
+        hasattr(var_info, "Data_Type_Description")
+        and "TIME_TT2000" in var_info.Data_Type_Description
+    ):
         return True
 
     # Fallback: check if variable name contains "epoch" and data is int64
-    if "epoch" in var_name.lower() and isinstance(data, np.ndarray) and data.dtype == np.int64:
-        return True
-
-    return False
+    return (
+        "epoch" in var_name.lower() and isinstance(data, np.ndarray) and data.dtype == np.int64
+    )
 
 
 def _convert_epoch_to_datetime(data: np.ndarray) -> np.ndarray:
@@ -195,7 +197,7 @@ def _convert_epoch_to_datetime(data: np.ndarray) -> np.ndarray:
         datetime_values = cdfepoch.to_datetime(data)
 
         # Return as-is (already datetime64[ns])
-        return datetime_values
+        return datetime_values  # type: ignore[no-any-return]
     except Exception:
         # If conversion fails, return original data
         return data
@@ -215,7 +217,7 @@ def read_cdf_variables(file_path: Path) -> list[CDFVariable]:
         Exception: If the file cannot be read
     """
     try:
-        import cdflib  # type: ignore[import-untyped]
+        import cdflib
     except ImportError as e:
         raise ImportError(
             "cdflib is required for CDF operations. Install with: pip install cdflib"
@@ -238,9 +240,12 @@ def read_cdf_variables(file_path: Path) -> list[CDFVariable]:
                     var_info = None
 
                 # Convert EPOCH variables to datetime
-                if var_info and _is_epoch_variable(var_info, var_name, data):
-                    if isinstance(data, np.ndarray):
-                        data = _convert_epoch_to_datetime(data)
+                if (
+                    var_info
+                    and _is_epoch_variable(var_info, var_name, data)
+                    and isinstance(data, np.ndarray)
+                ):
+                    data = _convert_epoch_to_datetime(data)
 
                 # Determine number of records
                 if isinstance(data, np.ndarray):

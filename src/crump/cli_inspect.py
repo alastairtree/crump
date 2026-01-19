@@ -217,9 +217,6 @@ def inspect_cdf(file_path: Path, num_records: int) -> None:
 
             console.print(attr_table)
 
-            # Convert cdf_variables list to dict for easy lookup
-            var_dict = {var.name: var for var in cdf_variables}
-
             # Get all variables using the converted data
             var_info_list = []
             for var in cdf_variables:

@@ -65,7 +65,9 @@ def test_epoch_conversion_imap(imap_cdf_file: Path) -> None:
 
     # Check that epoch data is datetime64
     assert isinstance(epoch_var.data, np.ndarray)
-    assert np.issubdtype(epoch_var.data.dtype, np.datetime64), f"Expected datetime64, got {epoch_var.data.dtype}"
+    assert np.issubdtype(epoch_var.data.dtype, np.datetime64), (
+        f"Expected datetime64, got {epoch_var.data.dtype}"
+    )
 
     # Check that values are valid datetimes
     # The filename says 20251010, so dates should be around October 10, 2025
@@ -86,7 +88,9 @@ def test_epoch_conversion_solo(solo_cdf_file: Path) -> None:
 
     # Check that EPOCH data is datetime64
     assert isinstance(epoch_var.data, np.ndarray)
-    assert np.issubdtype(epoch_var.data.dtype, np.datetime64), f"Expected datetime64, got {epoch_var.data.dtype}"
+    assert np.issubdtype(epoch_var.data.dtype, np.datetime64), (
+        f"Expected datetime64, got {epoch_var.data.dtype}"
+    )
 
     # Check that values are valid datetimes
     # The filename says 20241225, so dates should be around December 25, 2024
