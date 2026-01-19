@@ -192,6 +192,11 @@ def inspect_cdf(file_path: Path, num_records: int) -> None:
         raise click.ClickException(f"Cannot access file: {e}") from e
 
     try:
+        # Read variables using our reader to get EPOCH conversion
+        from crump.cdf_reader import read_cdf_variables
+
+        cdf_variables = read_cdf_variables(file_path)
+
         with cdflib.CDF(str(file_path)) as cdf:
             # Get CDF info
             info = cdf.cdf_info()
@@ -212,22 +217,10 @@ def inspect_cdf(file_path: Path, num_records: int) -> None:
 
             console.print(attr_table)
 
-            # Get all variables and sort by number of records (descending)
-            all_vars = info.rVariables + info.zVariables
+            # Get all variables using the converted data
             var_info_list = []
-
-            for var_name in all_vars:
-                try:
-                    data = cdf.varget(var_name)
-                    if isinstance(data, np.ndarray):
-                        num_recs = data.shape[0] if len(data.shape) > 0 else 1
-                    else:
-                        num_recs = 1
-                    var_info_list.append((var_name, data, num_recs))
-                except Exception as e:
-                    console.print(
-                        f"[yellow]Warning: Could not read variable {var_name}: {e}[/yellow]"
-                    )
+            for var in cdf_variables:
+                var_info_list.append((var.name, var.data, var.num_records))
 
             # Sort by number of records (descending)
             var_info_list.sort(key=lambda x: x[2], reverse=True)

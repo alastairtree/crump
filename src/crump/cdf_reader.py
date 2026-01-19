@@ -152,6 +152,55 @@ class CDFVariable:
         return [f"{self.name}_{i}" for i in range(self.array_size)]
 
 
+def _is_epoch_variable(var_info: Any, var_name: str, data: np.ndarray | Any) -> bool:
+    """Check if a variable is a CDF EPOCH time variable.
+
+    Args:
+        var_info: Variable information from CDF
+        var_name: Variable name
+        data: Variable data
+
+    Returns:
+        True if this is an EPOCH variable, False otherwise
+    """
+    # Check if data type is CDF_TIME_TT2000 (data type 33)
+    if hasattr(var_info, "Data_Type") and var_info.Data_Type == 33:
+        return True
+
+    # Check if data type description indicates EPOCH
+    if (
+        hasattr(var_info, "Data_Type_Description")
+        and "TIME_TT2000" in var_info.Data_Type_Description
+    ):
+        return True
+
+    # Fallback: check if variable name contains "epoch" and data is int64
+    return "epoch" in var_name.lower() and isinstance(data, np.ndarray) and data.dtype == np.int64
+
+
+def _convert_epoch_to_datetime(data: np.ndarray) -> np.ndarray:
+    """Convert CDF EPOCH values to datetime64 array.
+
+    Args:
+        data: Array of EPOCH values (int64 nanoseconds since J2000)
+
+    Returns:
+        Array of datetime64[ns] values
+    """
+    try:
+        from cdflib import cdfepoch  # type: ignore[import-untyped]
+
+        # Convert EPOCH to datetime64[ns]
+        # cdfepoch.to_datetime returns numpy.datetime64 array
+        datetime_values = cdfepoch.to_datetime(data)
+
+        # Return as-is (already datetime64[ns])
+        return datetime_values  # type: ignore[no-any-return]
+    except Exception:
+        # If conversion fails, return original data
+        return data
+
+
 def read_cdf_variables(file_path: Path) -> list[CDFVariable]:
     """Read all variables from a CDF file.
 
@@ -166,7 +215,7 @@ def read_cdf_variables(file_path: Path) -> list[CDFVariable]:
         Exception: If the file cannot be read
     """
     try:
-        import cdflib  # type: ignore[import-untyped]
+        import cdflib
     except ImportError as e:
         raise ImportError(
             "cdflib is required for CDF operations. Install with: pip install cdflib"
@@ -181,6 +230,20 @@ def read_cdf_variables(file_path: Path) -> list[CDFVariable]:
         for var_name in all_vars:
             try:
                 data = cdf.varget(var_name)
+
+                # Get variable info to check for EPOCH type
+                try:
+                    var_info = cdf.varinq(var_name)
+                except Exception:
+                    var_info = None
+
+                # Convert EPOCH variables to datetime
+                if (
+                    var_info
+                    and _is_epoch_variable(var_info, var_name, data)
+                    and isinstance(data, np.ndarray)
+                ):
+                    data = _convert_epoch_to_datetime(data)
 
                 # Determine number of records
                 if isinstance(data, np.ndarray):
