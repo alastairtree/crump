@@ -220,6 +220,104 @@ jobs:
             assert rows[0] == ("1", "100", date(2024, 1, 15))
             assert rows[1] == ("2", "200", date(2024, 1, 15))
 
+    def test_filename_to_column_imap_template_with_reimport(
+        self, tmp_path: Path, db_url: str
+    ) -> None:
+        """Test filename_to_column with imap_sc_l1_x285 template and re-import updates correctly.
+
+        Verifies:
+        1. file_date column is created in the database from the filename template
+        2. Correct date data is inserted from the filename
+        3. Re-importing the same date replaces rows and file_date is still correct
+        """
+        # Create CSV file with a filename matching the imap template
+        csv_file = tmp_path / "imap_sc_l1_x285_2025-03-22_v002.csv"
+        with open(csv_file, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=["record_id", "measurement"])
+            writer.writeheader()
+            writer.writerow({"record_id": "1", "measurement": "10.5"})
+            writer.writerow({"record_id": "2", "measurement": "20.3"})
+            writer.writerow({"record_id": "3", "measurement": "30.1"})
+
+        # Create config with the imap filename_to_column template
+        config_file = tmp_path / "crump_config.yml"
+        config_file.write_text(r"""
+jobs:
+  imap_sync:
+    target_table: imap_data
+    id_mapping:
+      record_id: id
+    filename_to_column:
+      template: "imap_sc_l1_x285_[date]_v[version].csv"
+      columns:
+        date:
+          db_column: file_date
+          type: date
+          use_to_delete_old_rows: true
+""")
+
+        config = CrumpConfig.from_yaml(config_file)
+        job = config.get_job("imap_sync")
+        assert job is not None
+        assert job.filename_to_column is not None
+
+        # Extract values from filename
+        filename_values = job.filename_to_column.extract_values_from_filename(csv_file)
+        assert filename_values == {"date": "2025-03-22", "version": "002"}
+
+        # First sync
+        rows_synced = sync_file_to_db(csv_file, job, db_url, filename_values)
+        assert rows_synced == 3
+
+        # Verify file_date column was created
+        columns = get_table_columns(db_url, "imap_data")
+        assert "file_date" in columns
+
+        # Verify data
+        rows = execute_query(db_url, "SELECT id, measurement, file_date FROM imap_data ORDER BY id")
+        assert len(rows) == 3
+        if db_url.startswith("sqlite"):
+            assert rows[0] == ("1", "10.5", "2025-03-22")
+            assert rows[1] == ("2", "20.3", "2025-03-22")
+            assert rows[2] == ("3", "30.1", "2025-03-22")
+        else:
+            from datetime import date
+
+            assert rows[0] == ("1", "10.5", date(2025, 3, 22))
+            assert rows[1] == ("2", "20.3", date(2025, 3, 22))
+            assert rows[2] == ("3", "30.1", date(2025, 3, 22))
+
+        # Now re-import with updated data for the same date (fewer rows, changed values)
+        csv_file2 = tmp_path / "imap_sc_l1_x285_2025-03-22_v003.csv"
+        with open(csv_file2, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=["record_id", "measurement"])
+            writer.writeheader()
+            writer.writerow({"record_id": "1", "measurement": "11.0"})
+            writer.writerow({"record_id": "2", "measurement": "22.0"})
+
+        # Extract values from new filename (same date, new version)
+        filename_values2 = job.filename_to_column.extract_values_from_filename(csv_file2)
+        assert filename_values2 == {"date": "2025-03-22", "version": "003"}
+
+        # Second sync - should update rows and delete stale record_id=3
+        rows_synced2 = sync_file_to_db(csv_file2, job, db_url, filename_values2)
+        assert rows_synced2 == 2
+
+        # Verify data after re-import
+        rows_after = execute_query(
+            db_url, "SELECT id, measurement, file_date FROM imap_data ORDER BY id"
+        )
+        # record_id=3 should be deleted (stale for this date), records 1 and 2 updated
+        assert len(rows_after) == 2
+        if db_url.startswith("sqlite"):
+            assert rows_after[0] == ("1", "11.0", "2025-03-22")
+            assert rows_after[1] == ("2", "22.0", "2025-03-22")
+        else:
+            from datetime import date
+
+            assert rows_after[0] == ("1", "11.0", date(2025, 3, 22))
+            assert rows_after[1] == ("2", "22.0", date(2025, 3, 22))
+
     def test_delete_stale_records(self, tmp_path: Path, db_url: str) -> None:
         """Test that stale records are deleted after sync with filename_to_column."""
         # First sync with 3 records for date 2024-01-15
