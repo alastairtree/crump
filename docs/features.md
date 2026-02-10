@@ -747,6 +747,7 @@ jobs:
 
 - **Default is permissive** — existing configs work without changes
 - **Use strict for data quality** — when you need to ensure all rows meet the schema
+- **Complete rejection is an error** — in strict mode, if ALL rows are rejected, crump raises an error with a non-zero exit code rather than silently importing nothing
 - **Skipped rows are logged** — check logs to see which rows were rejected and why
 - **ID columns are always required** — missing ID columns always cause an error regardless of failure_mode
 

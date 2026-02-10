@@ -630,6 +630,8 @@ jobs:
 
 If a CSV row is missing `temperature` or has a `sensor_code` longer than 10 characters, that row is skipped entirely. Other valid rows are still imported.
 
+**Important:** If **all** rows in the CSV are rejected in strict mode, crump raises an error and exits with a non-zero exit code. This prevents silent complete data loss and alerts you that the CSV is fundamentally incompatible with the configuration.
+
 **Permissive Mode — import everything possible:**
 
 ```yaml

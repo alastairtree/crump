@@ -210,7 +210,8 @@ class TestMissingNonNullableField:
             ],
         )
 
-    def test_strict_skips_rows_with_missing_non_nullable(self, csv_file: Path, db_url: str) -> None:
+    def test_strict_errors_when_all_rows_rejected(self, csv_file: Path, db_url: str) -> None:
+        """STRICT raises ValueError when all rows are rejected."""
         job = CrumpJob(
             name="test",
             target_table="test_strict_skip",
@@ -221,8 +222,8 @@ class TestMissingNonNullableField:
             ],
             failure_mode=FailureMode.STRICT,
         )
-        rows = sync_file_to_db(csv_file, job, db_url)
-        assert rows == 0  # Both rows skipped
+        with pytest.raises(ValueError, match="All 2 row.*rejected"):
+            sync_file_to_db(csv_file, job, db_url)
 
     def test_permissive_uses_zero_for_missing_integer(self, csv_file: Path, db_url: str) -> None:
         job = CrumpJob(
@@ -369,8 +370,8 @@ class TestFailureModeCombinedScenarios:
         assert results[0][2] is None  # nullable → NULL
         assert results[0][3] == 0  # non-nullable integer → 0
 
-    def test_strict_rejects_row_with_any_issue(self, tmp_path: Path, db_url: str) -> None:
-        """STRICT skips entire row if any non-nullable field is missing."""
+    def test_strict_errors_when_all_rows_rejected(self, tmp_path: Path, db_url: str) -> None:
+        """STRICT raises ValueError if all rows are rejected."""
         csv_file = create_csv_file(
             tmp_path / "data.csv",
             ["id", "name"],
@@ -388,32 +389,34 @@ class TestFailureModeCombinedScenarios:
             ],
             failure_mode=FailureMode.STRICT,
         )
-        rows = sync_file_to_db(csv_file, job, db_url)
-        assert rows == 0
+        with pytest.raises(ValueError, match="All 1 row.*rejected"):
+            sync_file_to_db(csv_file, job, db_url)
 
-    def test_normal_csv_unaffected_by_failure_mode(self, tmp_path: Path, db_url: str) -> None:
-        """When CSV matches config perfectly, failure_mode doesn't change behavior."""
+    def test_strict_partial_rejection_does_not_error(self, tmp_path: Path, db_url: str) -> None:
+        """STRICT does NOT error when only some rows are rejected (partial success)."""
         csv_file = create_csv_file(
             tmp_path / "data.csv",
-            ["id", "name", "score"],
+            ["id", "code"],
             [
-                {"id": "1", "name": "Alice", "score": "100"},
-                {"id": "2", "name": "Bob", "score": "200"},
+                {"id": "1", "code": "OK"},
+                {"id": "2", "code": "TOOLONGVALUE"},  # exceeds varchar(5)
             ],
         )
-        for mode in (FailureMode.STRICT, FailureMode.PERMISSIVE):
-            job = CrumpJob(
-                name="test",
-                target_table=f"test_normal_{mode.value}",
-                id_mapping=[ColumnMapping("id", "id")],
-                columns=[
-                    ColumnMapping("name", "name"),
-                    ColumnMapping("score", "score", data_type="integer"),
-                ],
-                failure_mode=mode,
-            )
-            rows = sync_file_to_db(csv_file, job, db_url)
-            assert rows == 2
+        job = CrumpJob(
+            name="test",
+            target_table="test_strict_partial",
+            id_mapping=[ColumnMapping("id", "id")],
+            columns=[
+                ColumnMapping("code", "code", data_type="varchar(5)"),
+            ],
+            failure_mode=FailureMode.STRICT,
+        )
+        # Should succeed with 1 row synced (not raise)
+        rows = sync_file_to_db(csv_file, job, db_url)
+        assert rows == 1
+        results = execute_query(db_url, 'SELECT id, code FROM "test_strict_partial" ORDER BY id')
+        assert len(results) == 1
+        assert results[0] == ("1", "OK")
 
 
 # ---------------------------------------------------------------------------
@@ -469,8 +472,8 @@ jobs:
                 db_url,
             ],
         )
-        # Should succeed (exit 0) but sync 0 rows in strict mode
-        assert result.exit_code == 0
+        # All rows rejected in strict mode → non-zero exit code
+        assert result.exit_code != 0
 
     def test_sync_with_permissive_mode_via_config(self, cli_runner, tmp_path: Path) -> None:
         """Test that permissive mode works via config file through CLI."""

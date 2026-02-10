@@ -1130,37 +1130,41 @@ class DatabaseConnection:
         for col_mapping in sync_columns:
             db_col = col_mapping.db_column
 
-            # Check if value is present in row_data
-            if db_col not in row_data or row_data[db_col] is None or row_data[db_col] == "":
-                is_missing = (
-                    db_col not in row_data
-                    or row_data[db_col] is None
-                    or (
-                        row_data.get(db_col) == ""
-                        and col_mapping.csv_column is not None
-                        and col_mapping.csv_column not in csv_row
-                    )
+            # Determine if this column's value is missing from the CSV
+            # A value is "missing" if:
+            #   - The db_col key is absent from row_data, OR
+            #   - The value is None (set by apply_row_transformations for missing CSV cols), OR
+            #   - The CSV column was not present in the original row (empty string artifact)
+            value = row_data.get(db_col)
+            is_missing = (
+                db_col not in row_data
+                or value is None
+                or (
+                    value == ""
+                    and col_mapping.csv_column is not None
+                    and col_mapping.csv_column not in csv_row
                 )
+            )
 
-                if is_missing:
-                    if col_mapping.nullable is True or col_mapping.nullable is None:
-                        # Nullable or unspecified → NULL
-                        row_data[db_col] = None
-                    elif col_mapping.nullable is False:
-                        # Non-nullable field missing
-                        if failure_mode == FailureMode.STRICT:
-                            logger.warning(
-                                f"STRICT mode: Skipping row - missing non-nullable field '{db_col}'"
-                            )
-                            return None
-                        else:
-                            # PERMISSIVE: use default value
-                            default = self._get_default_value(col_mapping.data_type)
-                            logger.warning(
-                                f"PERMISSIVE mode: Using default value {default!r} "
-                                f"for missing non-nullable field '{db_col}'"
-                            )
-                            row_data[db_col] = default
+            if is_missing:
+                if col_mapping.nullable is False:
+                    # Non-nullable field missing
+                    if failure_mode == FailureMode.STRICT:
+                        logger.warning(
+                            f"STRICT mode: Skipping row - missing non-nullable field '{db_col}'"
+                        )
+                        return None
+                    else:
+                        # PERMISSIVE: use default value
+                        default = self._get_default_value(col_mapping.data_type)
+                        logger.warning(
+                            f"PERMISSIVE mode: Using default value {default!r} "
+                            f"for missing non-nullable field '{db_col}'"
+                        )
+                        row_data[db_col] = default
+                else:
+                    # Nullable or unspecified → NULL
+                    row_data[db_col] = None
 
             # Check varchar limit
             varchar_limit = self._get_varchar_limit(col_mapping.data_type)
@@ -1259,6 +1263,13 @@ class DatabaseConnection:
 
         if rows_skipped > 0:
             logger.warning(f"Skipped {rows_skipped} rows due to validation failures")
+
+        # In STRICT mode, if the file had rows but ALL were rejected, raise an error
+        if job.failure_mode == FailureMode.STRICT and rows_skipped > 0 and rows_synced == 0:
+            raise ValueError(
+                f"STRICT mode: All {rows_skipped} row(s) were rejected due to "
+                f"validation failures. No data was imported into '{job.target_table}'."
+            )
 
         return rows_synced, synced_ids
 
