@@ -28,6 +28,7 @@ Each job has the following fields:
 | `filename_to_column` | object | No | Extract values from filename to database columns |
 | `indexes` | list | No | Database indexes to create |
 | `sample_percentage` | float | No | Percentage of rows to sync (0-100). If omitted or 100, syncs all rows |
+| `failure_mode` | string | No | How to handle data/config mismatches: `strict` or `permissive` (default: `permissive`) |
 
 ### ID Mapping
 
@@ -568,6 +569,92 @@ prod_events:
 
 !!! note
     Sampling is deterministic based on row position, not random. The same file will always produce the same sample. First and last rows are always included to ensure edge cases are tested.
+
+### Failure Mode
+
+The `failure_mode` setting controls how crump handles mismatches between CSV data and the job configuration. This is useful when CSV files may not always perfectly match the expected schema.
+
+```yaml
+jobs:
+  my_job:
+    target_table: measurements
+    id_mapping:
+      id: id
+    failure_mode: permissive  # or "strict"
+    columns:
+      name: name
+      value:
+        db_column: value
+        type: integer
+        nullable: false
+      code:
+        db_column: code
+        type: varchar(5)
+```
+
+#### Modes
+
+| Mode | Description |
+|------|-------------|
+| `permissive` (default) | Best-effort import — tries to import as much data as possible |
+| `strict` | Rejects rows that don't conform to the config schema |
+
+#### Behavior by Mismatch Type
+
+| Mismatch | STRICT | PERMISSIVE |
+|----------|--------|------------|
+| CSV missing a **nullable** field | Insert NULL | Insert NULL |
+| CSV missing a **non-nullable** field | Skip row | Use default: `0` for integers, `""` for strings |
+| String exceeds **varchar(N)** limit | Skip row | Truncate to N characters |
+
+#### Examples
+
+**Strict Mode — reject bad rows:**
+
+```yaml
+jobs:
+  strict_import:
+    target_table: sensor_data
+    id_mapping:
+      reading_id: id
+    failure_mode: strict
+    columns:
+      temperature:
+        db_column: temperature
+        type: float
+        nullable: false
+      sensor_code:
+        db_column: sensor_code
+        type: varchar(10)
+```
+
+If a CSV row is missing `temperature` or has a `sensor_code` longer than 10 characters, that row is skipped entirely. Other valid rows are still imported.
+
+**Important:** If **all** rows in the CSV are rejected in strict mode, crump raises an error and exits with a non-zero exit code. This prevents silent complete data loss and alerts you that the CSV is fundamentally incompatible with the configuration.
+
+**Permissive Mode — import everything possible:**
+
+```yaml
+jobs:
+  lenient_import:
+    target_table: sensor_data
+    id_mapping:
+      reading_id: id
+    failure_mode: permissive
+    columns:
+      temperature:
+        db_column: temperature
+        type: float
+        nullable: false
+      sensor_code:
+        db_column: sensor_code
+        type: varchar(10)
+```
+
+If a CSV row is missing `temperature`, it is set to `0.0`. If `sensor_code` is longer than 10 characters, it is truncated to 10. All rows are imported.
+
+!!! note
+    `failure_mode` defaults to `permissive` if not specified. This ensures backward compatibility — existing configurations continue to work without changes.
 
 ## Complete Example
 
