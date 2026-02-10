@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from crump.config import CrumpConfig
-from crump.database import DatabaseConnection, sync_file_to_db
+from crump.database import sync_file_to_db
 from tests.db_test_utils import execute_query, get_table_columns, get_table_indexes
 
 
@@ -140,8 +140,8 @@ class TestDatabaseIntegration:
         row_result = execute_query(db_url, "SELECT id, value FROM test_data")
         assert row_result[0] == ("1", "updated")  # Value was updated
 
-    def test_missing_csv_column_error(self, tmp_path: Path, db_url: str) -> None:
-        """Test error when CSV is missing a required column."""
+    def test_missing_csv_column_inserts_null(self, tmp_path: Path, db_url: str) -> None:
+        """Test that a missing CSV column results in NULL (default permissive mode)."""
         csv_file = tmp_path / "incomplete.csv"
         with open(csv_file, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=["id"])
@@ -162,8 +162,11 @@ jobs:
         config = CrumpConfig.from_yaml(config_file)
         job = config.get_job("bad_job")
 
-        with DatabaseConnection(db_url) as db, pytest.raises(ValueError, match="not found in CSV"):
-            db.sync_tabular_file(csv_file, job)
+        rows = sync_file_to_db(csv_file, job, db_url)
+        assert rows == 1
+        results = execute_query(db_url, 'SELECT id, value FROM "test" ORDER BY id')
+        assert results[0][0] == "1"
+        assert results[0][1] is None  # Missing column → NULL
 
     def test_sync_with_filename_to_column(self, tmp_path: Path, db_url: str) -> None:
         """Test syncing with filename_to_column extracts and stores values."""

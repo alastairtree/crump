@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import enum
 import fnmatch
 import importlib
 import re
@@ -9,6 +10,24 @@ from pathlib import Path
 from typing import Any
 
 import yaml  # type: ignore[import-untyped]
+
+
+class FailureMode(enum.Enum):
+    """Controls how data/config mismatches are handled during sync.
+
+    STRICT: Rejects rows that don't conform to the config schema.
+        - Missing nullable fields → NULL
+        - Missing non-nullable fields → skip row
+        - String exceeding varchar limit → skip row
+
+    PERMISSIVE: Best-effort import of as much data as possible.
+        - Missing nullable fields → NULL
+        - Missing non-nullable fields → default value (0 for integers, "" for strings)
+        - String exceeding varchar limit → truncate to fit
+    """
+
+    STRICT = "strict"
+    PERMISSIVE = "permissive"
 
 
 class DuplicateKeySafeLoader(yaml.SafeLoader):
@@ -351,6 +370,7 @@ class CrumpJob:
         filename_to_column: FilenameToColumn | None = None,
         indexes: list[Index] | None = None,
         sample_percentage: float | None = None,
+        failure_mode: FailureMode = FailureMode.PERMISSIVE,
     ) -> None:
         """Initialize a sync job.
 
@@ -365,6 +385,8 @@ class CrumpJob:
             sample_percentage: Optional percentage of rows to sample (0-100). If None or 100,
                               syncs all rows. Values like 10 mean 1 in every 10 rows.
                               Always includes first and last row.
+            failure_mode: How to handle data/config mismatches. PERMISSIVE (default) tries to
+                         import as much data as possible. STRICT rejects non-conforming rows.
         """
         self.name = name
         self.target_table = target_table
@@ -374,6 +396,7 @@ class CrumpJob:
         self.indexes = indexes or []
         self.sample_percentage = sample_percentage
         self.filename_match = filename_match
+        self.failure_mode = failure_mode
 
         # Validate sample_percentage
         if sample_percentage is not None and not (0 <= sample_percentage <= 100):
@@ -780,6 +803,22 @@ class CrumpConfig:
             if not isinstance(filename_match, str):
                 raise ValueError(f"Job '{name}' filename_match must be a string")
 
+        # Parse optional failure_mode (default: permissive)
+        failure_mode = FailureMode.PERMISSIVE
+        if "failure_mode" in job_data and job_data["failure_mode"] is not None:
+            fm_value = job_data["failure_mode"]
+            if not isinstance(fm_value, str):
+                raise ValueError(f"Job '{name}' failure_mode must be a string")
+            fm_lower = fm_value.lower().strip()
+            if fm_lower == "strict":
+                failure_mode = FailureMode.STRICT
+            elif fm_lower == "permissive":
+                failure_mode = FailureMode.PERMISSIVE
+            else:
+                raise ValueError(
+                    f"Job '{name}' failure_mode must be 'strict' or 'permissive', got '{fm_value}'"
+                )
+
         return CrumpJob(
             name=name,
             target_table=job_data["target_table"],
@@ -789,6 +828,7 @@ class CrumpConfig:
             filename_match=filename_match,
             indexes=indexes if indexes else None,
             sample_percentage=sample_percentage,
+            failure_mode=failure_mode,
         )
 
     def add_or_update_job(self, job: CrumpJob, force: bool = False) -> bool:
@@ -929,6 +969,10 @@ class CrumpConfig:
             if job.sample_percentage is not None and job.sample_percentage != 100:
                 job_dict["sample_percentage"] = job.sample_percentage
 
+            # Add failure_mode if not the default (permissive)
+            if job.failure_mode != FailureMode.PERMISSIVE:
+                job_dict["failure_mode"] = job.failure_mode.value
+
             jobs_dict[job_name] = job_dict
 
         result: dict[str, Any] = {"jobs": jobs_dict}
@@ -983,6 +1027,9 @@ def apply_row_transformations(
             csv_value = row[col_mapping.csv_column]
             # Apply lookup transformation if configured
             row_data[col_mapping.db_column] = col_mapping.apply_lookup(csv_value)
+        elif col_mapping.csv_column and col_mapping.csv_column not in row:
+            # CSV column is missing from this row - mark as None for validation
+            row_data[col_mapping.db_column] = None
 
     # Add filename values if configured
     if filename_to_column and filename_values:

@@ -10,7 +10,7 @@ from typing import Any, Protocol
 import psycopg
 from psycopg import sql
 
-from crump.config import CrumpJob, apply_row_transformations
+from crump.config import ColumnMapping, CrumpJob, FailureMode, apply_row_transformations
 from crump.tabular_file import create_reader
 
 
@@ -907,6 +907,10 @@ class DatabaseConnection:
     ) -> list[Any]:
         """Determine which columns to sync based on job configuration.
 
+        When failure_mode is set, missing CSV columns for configured mappings are
+        tolerated (the column is kept so rows can receive default/null values).
+        Custom function input columns that are missing always raise ValueError.
+
         Args:
             job: CrumpJob configuration
             csv_columns: Set of column names from CSV
@@ -916,7 +920,7 @@ class DatabaseConnection:
             List of ColumnMapping objects for columns to sync
 
         Raises:
-            ValueError: If a configured column is missing from CSV
+            ValueError: If a custom function input column is missing from CSV
         """
         if job.columns:
             # Specific columns defined
@@ -935,11 +939,14 @@ class DatabaseConnection:
                     continue
 
                 if col_mapping.csv_column not in csv_columns:
-                    raise ValueError(f"Column '{col_mapping.csv_column}' not found in CSV")
+                    # Column is missing from CSV - log warning but keep it
+                    # Row validation will handle this per-row based on failure_mode
+                    logger.warning(
+                        f"Column '{col_mapping.csv_column}' defined in config "
+                        f"but not found in CSV file"
+                    )
         else:
             # Sync all columns
-            from crump.config import ColumnMapping
-
             sync_columns = list(job.id_mapping)
             for csv_col in csv_columns:
                 if csv_col not in id_csv_columns:
@@ -1057,6 +1064,126 @@ class DatabaseConnection:
         interval = int(100 / sample_percentage)
         return row_index % interval == 0
 
+    @staticmethod
+    def _get_varchar_limit(data_type: str | None) -> int | None:
+        """Extract the character limit from a varchar(N) type string.
+
+        Args:
+            data_type: Data type string, e.g. 'varchar(50)'
+
+        Returns:
+            The limit N, or None if not a varchar type
+        """
+        if data_type is None:
+            return None
+        import re as _re
+
+        match = _re.match(r"varchar\((\d+)\)", data_type.lower().strip())
+        if match:
+            return int(match.group(1))
+        return None
+
+    @staticmethod
+    def _get_default_value(data_type: str | None) -> Any:
+        """Get the permissive default value for a non-nullable column.
+
+        Args:
+            data_type: The configured data type
+
+        Returns:
+            0 for integer/numeric types, empty string for text/string types
+        """
+        if data_type is None:
+            return ""
+        dt_lower = data_type.lower().strip()
+        if dt_lower in ("integer", "int", "bigint"):
+            return 0
+        if dt_lower in ("float", "double"):
+            return 0.0
+        return ""
+
+    def _validate_and_fix_row(
+        self,
+        row_data: dict[str, Any],
+        sync_columns: list[Any],
+        job: CrumpJob,
+        csv_row: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Validate a transformed row and apply failure_mode rules.
+
+        Handles:
+        - Missing nullable fields → NULL (both modes)
+        - Missing non-nullable fields → skip row (STRICT), default value (PERMISSIVE)
+        - String exceeding varchar limit → skip row (STRICT), truncate (PERMISSIVE)
+
+        Args:
+            row_data: The transformed row data (db_column → value)
+            sync_columns: List of ColumnMapping objects
+            job: CrumpJob configuration
+            csv_row: The original CSV row (for context in logging)
+
+        Returns:
+            The validated/fixed row_data dict, or None if the row should be skipped
+        """
+        failure_mode = job.failure_mode
+
+        for col_mapping in sync_columns:
+            db_col = col_mapping.db_column
+
+            # Check if value is present in row_data
+            if db_col not in row_data or row_data[db_col] is None or row_data[db_col] == "":
+                is_missing = (
+                    db_col not in row_data
+                    or row_data[db_col] is None
+                    or (
+                        row_data.get(db_col) == ""
+                        and col_mapping.csv_column is not None
+                        and col_mapping.csv_column not in csv_row
+                    )
+                )
+
+                if is_missing:
+                    if col_mapping.nullable is True or col_mapping.nullable is None:
+                        # Nullable or unspecified → NULL
+                        row_data[db_col] = None
+                    elif col_mapping.nullable is False:
+                        # Non-nullable field missing
+                        if failure_mode == FailureMode.STRICT:
+                            logger.warning(
+                                f"STRICT mode: Skipping row - missing non-nullable field '{db_col}'"
+                            )
+                            return None
+                        else:
+                            # PERMISSIVE: use default value
+                            default = self._get_default_value(col_mapping.data_type)
+                            logger.warning(
+                                f"PERMISSIVE mode: Using default value {default!r} "
+                                f"for missing non-nullable field '{db_col}'"
+                            )
+                            row_data[db_col] = default
+
+            # Check varchar limit
+            varchar_limit = self._get_varchar_limit(col_mapping.data_type)
+            if varchar_limit is not None and db_col in row_data and row_data[db_col] is not None:
+                value = str(row_data[db_col])
+                if len(value) > varchar_limit:
+                    if failure_mode == FailureMode.STRICT:
+                        logger.warning(
+                            f"STRICT mode: Skipping row - value for '{db_col}' "
+                            f"exceeds varchar({varchar_limit}) limit "
+                            f"(length {len(value)})"
+                        )
+                        return None
+                    else:
+                        # PERMISSIVE: truncate
+                        logger.warning(
+                            f"PERMISSIVE mode: Truncating value for '{db_col}' "
+                            f"from {len(value)} to {varchar_limit} characters"
+                        )
+                        row_data[db_col] = value[:varchar_limit]
+
+        return row_data
+
     def _process_tabular_rows(
         self,
         reader: Any,
@@ -1078,6 +1205,7 @@ class DatabaseConnection:
             Tuple of (rows_synced, synced_ids) where synced_ids are tuples of ID values
         """
         rows_synced = 0
+        rows_skipped = 0
         synced_ids: set[tuple] = set()
 
         # For sampling, we need to know total row count first
@@ -1096,10 +1224,16 @@ class DatabaseConnection:
                     row, sync_columns, job.filename_to_column, filename_values
                 )
 
-                self.upsert_row(job.target_table, primary_keys, row_data)
+                # Validate and fix row based on failure_mode
+                validated = self._validate_and_fix_row(row_data, sync_columns, job, row)
+                if validated is None:
+                    rows_skipped += 1
+                    continue
+
+                self.upsert_row(job.target_table, primary_keys, validated)
 
                 # Track synced IDs as tuples (for compound key support)
-                id_values = tuple(row_data[id_col.db_column] for id_col in job.id_mapping)
+                id_values = tuple(validated[id_col.db_column] for id_col in job.id_mapping)
                 synced_ids.add(id_values)
                 rows_synced += 1
         else:
@@ -1110,12 +1244,21 @@ class DatabaseConnection:
                     row, sync_columns, job.filename_to_column, filename_values
                 )
 
-                self.upsert_row(job.target_table, primary_keys, row_data)
+                # Validate and fix row based on failure_mode
+                validated = self._validate_and_fix_row(row_data, sync_columns, job, row)
+                if validated is None:
+                    rows_skipped += 1
+                    continue
+
+                self.upsert_row(job.target_table, primary_keys, validated)
 
                 # Track synced IDs as tuples (for compound key support)
-                id_values = tuple(row_data[id_col.db_column] for id_col in job.id_mapping)
+                id_values = tuple(validated[id_col.db_column] for id_col in job.id_mapping)
                 synced_ids.add(id_values)
                 rows_synced += 1
+
+        if rows_skipped > 0:
+            logger.warning(f"Skipped {rows_skipped} rows due to validation failures")
 
         return rows_synced, synced_ids
 

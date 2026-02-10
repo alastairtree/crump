@@ -694,6 +694,62 @@ psql -d mydb -c "SELECT timestamp, filename, table_name, rows_upserted, rows_del
 - **Clean up old history**: Periodically archive or delete old history records
 - **Track performance**: Use duration metrics to optimize large syncs
 
+## Data/Config Mismatch Handling
+
+When CSV data doesn't perfectly match the job configuration, crump uses the `failure_mode` setting to determine how to handle the mismatch. This is configured per-job in the YAML configuration.
+
+### Failure Modes
+
+**Permissive (default):** Best-effort import — tries to import as much data as possible.
+
+```yaml
+jobs:
+  my_job:
+    target_table: data
+    id_mapping:
+      id: id
+    failure_mode: permissive
+    columns:
+      name: name
+      score:
+        db_column: score
+        type: integer
+        nullable: false
+```
+
+**Strict:** Rejects rows that don't conform to the config schema.
+
+```yaml
+jobs:
+  my_job:
+    target_table: data
+    id_mapping:
+      id: id
+    failure_mode: strict
+    columns:
+      name: name
+      score:
+        db_column: score
+        type: integer
+        nullable: false
+```
+
+### Mismatch Scenarios
+
+| Scenario | STRICT | PERMISSIVE |
+|----------|--------|------------|
+| CSV missing a nullable field | Insert NULL | Insert NULL |
+| CSV missing a non-nullable integer field | Skip row | Insert `0` |
+| CSV missing a non-nullable text field | Skip row | Insert `""` |
+| String exceeds varchar(N) limit | Skip row | Truncate to N chars |
+
+### Tips
+
+- **Default is permissive** — existing configs work without changes
+- **Use strict for data quality** — when you need to ensure all rows meet the schema
+- **Skipped rows are logged** — check logs to see which rows were rejected and why
+- **ID columns are always required** — missing ID columns always cause an error regardless of failure_mode
+
 ## Next Steps
 
 - [Configuration Guide](configuration.md) - YAML configuration reference
