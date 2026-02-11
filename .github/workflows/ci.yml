@@ -103,7 +103,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Coverage comment
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14' && github.event_name == 'pull_request'
         uses: py-cov-action/python-coverage-comment-action@v3
         with:
           GITHUB_TOKEN: ${{ github.token }}

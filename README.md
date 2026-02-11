@@ -1,55 +1,157 @@
-# Repository Coverage
+# Welcome to Crump
 
-[Full report](https://htmlpreview.github.io/?https://github.com/alastairtree/crump/blob/main/htmlcov/index.html)
+Examines and syncs CSV, Parquet, and CDF files into PostgreSQL or SQLite databases in batched files using easy to edit configuration files.
 
-| Name                         |    Stmts |     Miss |   Cover |   Missing |
-|----------------------------- | -------: | -------: | ------: | --------: |
-| src/crump/\_\_init\_\_.py    |        5 |        0 |    100% |           |
-| src/crump/cdf\_extractor.py  |      260 |       35 |     87% |47-48, 105, 114, 142-144, 193-194, 254, 269, 303, 314, 350, 465, 507-508, 547, 559-560, 575-576, 585-595, 605, 615, 632, 639, 665, 674-675 |
-| src/crump/cdf\_reader.py     |      134 |       32 |     76% |90-91, 104-107, 115-118, 138-141, 175, 199-201, 219-220, 237-238, 254-256, 261-262, 274-276, 299-303 |
-| src/crump/cli.py             |       15 |        0 |    100% |           |
-| src/crump/cli\_extract.py    |      168 |       24 |     86% |32, 255, 275, 305-308, 337-342, 385, 391, 413-416, 445-450, 458-460 |
-| src/crump/cli\_inspect.py    |      210 |       38 |     82% |35, 54-55, 64-65, 76-78, 121-122, 139, 161-163, 178-182, 191-192, 241-242, 257-258, 303, 312, 322-327, 342-346, 350-351, 398, 412-414 |
-| src/crump/cli\_prepare.py    |      214 |       17 |     92% |235-238, 395, 417, 440, 474-475, 528, 546, 549-550, 552-553, 564-565, 571-572 |
-| src/crump/cli\_sync.py       |      140 |       35 |     75% |51, 58-59, 170, 177, 181-184, 209-210, 222-238, 260-278, 287, 319-320, 334-335, 341-342 |
-| src/crump/config.py          |      401 |       38 |     91% |57, 150, 153, 185-186, 193, 207-208, 309, 403, 480-481, 602, 649, 677, 680, 691, 706, 724, 727, 735-741, 763, 767, 770, 773, 778, 781, 804, 811, 880, 882, 884, 886, 937 |
-| src/crump/console\_utils.py  |        8 |        1 |     88% |        24 |
-| src/crump/csv\_file.py       |       51 |        1 |     98% |        81 |
-| src/crump/database.py        |      642 |       55 |     91% |41-43, 67, 71, 75, 79, 83, 89, 93, 97, 103, 113, 123, 127, 139, 150, 174, 298, 358, 486-489, 650, 725, 781, 796, 802, 808, 816, 828, 842, 850, 858, 871, 892-899, 936, 969, 1048, 1052, 1141, 1156, 1161, 1165, 1259-1260, 1355-1356, 1476, 1482, 1658-1660 |
-| src/crump/file\_types.py     |       37 |        1 |     97% |        82 |
-| src/crump/history.py         |       37 |        0 |    100% |           |
-| src/crump/parquet\_file.py   |       79 |        5 |     94% |12-13, 87, 188, 194 |
-| src/crump/tabular\_file.py   |       76 |       20 |     74% |42, 53, 63, 72, 105, 116, 125, 161-164, 174, 202-212, 220 |
-| src/crump/type\_detection.py |      100 |        2 |     98% |  160, 190 |
-| **TOTAL**                    | **2577** |  **304** | **88%** |           |
+[![CI](https://github.com/alastairtree/crump/workflows/CI/badge.svg)](https://github.com/alastairtree/crump/actions)
+[![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+
+## Overview
+
+**crump** is a command-line tool and Python library for easy syncing CSV, Parquet, and CDF files to PostgreSQL or SQLite databases, and extracxting data from CDF files. It provides a declarative, configuration-based approach to data synchronization with automatic schema management..
+
+## Key Features
+
+### Data File Support
+- **CSV Support**: Read and sync standard CSV files
+- **Native CDF Processing**: Built-in support for Common Data Format (CDF) science files
+- **Automatic Extraction**: Extracts CDF variables to CSV, Parquet, or directly to database
+- **Array Variable Handling**: Automatically expands multi-dimensional array variables
+- **Apache Parquet Support**: Built-in support for Apache Parquet files and sync Parquet files directly to database
+- **Extract to Parquet**: Convert CDF files to Parquet format with `--parquet` flag
+
+### Data Synchronization
+- **Configuration-Based**: Examines your CSV files with the prepare command, and defines sync jobs in YAML with sensible column mappings
+- **Column Mapping**: Sync all columns, rename them, or only sync a subset
+- **Automatic Table Creation**: Creates target tables if they don't exist
+- **Schema Evolution**: Automatically adds new columns as needed, never deletes existing columns. Optionally keeps a history of data changes in a history table.
+- **Index Management**: Suggests and creates database indexes based on column types
+- **Dual Interface**: Use as a CLI tool or import as a Python library
+- **Filename-Based Extraction**: Extract values from filenames (dates, versions, etc.) and store in database columns
+- **Automatic Cleanup**: Delete stale records based on extracted filename values
+- **Compound Primary Keys**: Support for multi-column primary keys
+- **Dry-Run Mode**: Preview all changes without modifying the database
+- **Idempotent Operations**: Safe to run multiple times, uses upsert
+- **Rich Output**: Beautiful terminal output with Rich library
+
+## Quick Example
+
+```bash
+uv install crump # or pip install crump if you prefer
+
+# Create a configuration file
+crump prepare users.csv --config crump_config.yml --job users_sync
+
+# Look at the mapping it generated for you in crump_config.yml and edit as needed. 
+# Crump has mapped your columns and suggested keys and indexes
+
+# get ready to sync - you db must be available
+export DATABASE_URL="sqlite:///test.db"
+# Or for Postgres
+# export DATABASE_URL="postgresql://user:pass@localhost:5432/mydb"
+
+# preview changes first (requires --db-url or DATABASE_URL)
+crump sync users.csv --config crump_config.yml --job users_sync --dry-run
+
+# Sync the file to database
+crump sync users.csv --config crump_config.yml --job users_sync
+
+# Later that day the v2 of the file arrives
+# Sync the new file, old records from v1 are removed automatically, updates are applied to rows that match based on primary key
+crump sync users_v2.csv --config crump_config.yml --job users_sync
+```
+
+## Example Configuration
+
+```yaml
+jobs:
+  daily_sales:
+    target_table: sales
+    id_mapping:
+      sale_id: id
+    filename_to_column:
+      template: "sales_[date].csv"
+      columns:
+        date:
+          db_column: sync_date
+          type: date
+          use_to_delete_old_rows: true
+    columns:
+      product_id: product_id
+      amount: amount
+```
+
+This configuration:
+- Syncs `sales_YYYY-MM-DD.csv` files to the `sales` table
+- Extracts the date from filename and stores it in `sync_date` column
+- Automatically deletes stale records for the same date after sync
+- Maps CSV columns to database columns
+
+## Documentation
+
+📚 **[Read the full documentation](https://alastairtree.github.io/crump)**
+
+- [Installation Guide](https://alastairtree.github.io/crump/installation/) - Install crump
+- [Quick Start](https://alastairtree.github.io/crump/quick-start/) - Get started in 5 minutes
+- [Configuration](https://alastairtree.github.io/crump/configuration/) - YAML configuration reference
+- [CLI Reference](https://alastairtree.github.io/crump/cli-reference/) - Command-line documentation
+- [Features](https://alastairtree.github.io/crump/features/) - Detailed feature documentation
+- [API Reference](https://alastairtree.github.io/crump/api-reference/) - Python API documentation
+- [Development](https://alastairtree.github.io/crump/development/) - Contributing guide
 
 
-## Setup coverage badge
+## Programmatic Usage
 
-Below are examples of the badges you can use in your main branch `README` file.
+```python
+from pathlib import Path
+from crump import sync_csv_to_db, CrumpConfig
 
-### Direct image
+# Load configuration
+config = CrumpConfig.from_yaml(Path("crump_config.yml"))
+job = config.get_job("my_job")
 
-[![Coverage badge](https://raw.githubusercontent.com/alastairtree/crump/main/badge.svg)](https://htmlpreview.github.io/?https://github.com/alastairtree/crump/blob/main/htmlcov/index.html)
+# Sync CSV to database (PostgreSQL or SQLite)
+rows_synced = sync_csv_to_db(
+    csv_path=Path("data.csv"),
+    job=job,
+    db_connection_string="postgresql://localhost/mydb"
+)
+print(f"Synced {rows_synced} rows")
+```
 
-This is the one to use if your repository is private or if you don't want to customize anything.
+## Development
 
-### [Shields.io](https://shields.io) Json Endpoint
+```bash
+# Clone repository
+git clone https://github.com/alastairtree/crump.git
+cd crump
 
-[![Coverage badge](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/alastairtree/crump/main/endpoint.json)](https://htmlpreview.github.io/?https://github.com/alastairtree/crump/blob/main/htmlcov/index.html)
+# Install with development dependencies
+uv sync --all-extras
 
-Using this one will allow you to [customize](https://shields.io/endpoint) the look of your badge.
-It won't work with private repositories. It won't be refreshed more than once per five minutes.
+# Run tests
+uv run pytest -v
 
-### [Shields.io](https://shields.io) Dynamic Badge
+# Generate documentation locally
+./generate-docs.sh
+```
 
-[![Coverage badge](https://img.shields.io/badge/dynamic/json?color=brightgreen&label=coverage&query=%24.message&url=https%3A%2F%2Fraw.githubusercontent.com%2Falastairtree%2Fcrump%2Fmain%2Fendpoint.json)](https://htmlpreview.github.io/?https://github.com/alastairtree/crump/blob/main/htmlcov/index.html)
+See the [Development Guide](https://alastairtree.github.io/crump/development/) for detailed instructions.
 
-This one will always be the same color. It won't work for private repos. I'm not even sure why we included it.
+## Contributing
 
-## What is that?
+Contributions are welcome! Please see the [Contributing Guide](https://alastairtree.github.io/crump/contributing/) for details.
 
-This branch is part of the
-[python-coverage-comment-action](https://github.com/marketplace/actions/python-coverage-comment)
-GitHub Action. All the files in this branch are automatically generated and may be
-overwritten at any moment.
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+- 📖 [Documentation](https://alastairtree.github.io/crump)
+- 🐛 [Issue Tracker](https://github.com/alastairtree/crump/issues)
+- 💬 [Discussions](https://github.com/alastairtree/crump/discussions)
+
+## Acknowledgments
+
+Built with [Click](https://click.palletsprojects.com/), [Rich](https://rich.readthedocs.io/), [psycopg3](https://www.psycopg.org/psycopg3/), and [pytest](https://pytest.org/).
