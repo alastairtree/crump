@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import logging
 import sqlite3
 from pathlib import Path
@@ -1083,6 +1084,63 @@ class DatabaseConnection:
             return int(match.group(1))
         return None
 
+    # PostgreSQL integer range limits
+    _INTEGER_MIN = -2147483648
+    _INTEGER_MAX = 2147483647
+    _BIGINT_MIN = -9223372036854775808
+    _BIGINT_MAX = 9223372036854775807
+
+    # Minimum datetime used as a permissive default for non-nullable datetime columns
+    _MIN_DATETIME = datetime.datetime(1, 1, 1, 0, 0, 0)
+    _MIN_DATE = datetime.date(1, 1, 1)
+
+    @staticmethod
+    def _get_integer_range(data_type: str | None) -> tuple[int, int] | None:
+        """Get the valid integer range for the given data type.
+
+        Args:
+            data_type: Data type string, e.g. 'integer', 'bigint'
+
+        Returns:
+            (min, max) tuple, or None if not an integer type
+        """
+        if data_type is None:
+            return None
+        dt_lower = data_type.lower().strip()
+        if dt_lower in ("integer", "int"):
+            return (DatabaseConnection._INTEGER_MIN, DatabaseConnection._INTEGER_MAX)
+        if dt_lower == "bigint":
+            return (DatabaseConnection._BIGINT_MIN, DatabaseConnection._BIGINT_MAX)
+        return None
+
+    @staticmethod
+    def _is_datetime_type(data_type: str | None) -> bool:
+        """Check if the data type is a date or datetime type.
+
+        Args:
+            data_type: Data type string
+
+        Returns:
+            True if data_type is date, datetime, or timestamp
+        """
+        if data_type is None:
+            return False
+        return data_type.lower().strip() in ("date", "datetime", "timestamp")
+
+    @staticmethod
+    def _is_empty_datetime_value(value: Any) -> bool:
+        """Check if a value represents an empty/null datetime.
+
+        Args:
+            value: The value to check
+
+        Returns:
+            True if the value is None, empty string, or whitespace-only string
+        """
+        if value is None:
+            return True
+        return isinstance(value, str) and value.strip() == ""
+
     @staticmethod
     def _get_default_value(data_type: str | None) -> Any:
         """Get the permissive default value for a non-nullable column.
@@ -1091,7 +1149,8 @@ class DatabaseConnection:
             data_type: The configured data type
 
         Returns:
-            0 for integer/numeric types, empty string for text/string types
+            0 for integer/numeric types, min datetime for date/datetime types,
+            empty string for text/string types
         """
         if data_type is None:
             return ""
@@ -1100,6 +1159,10 @@ class DatabaseConnection:
             return 0
         if dt_lower in ("float", "double"):
             return 0.0
+        if dt_lower == "date":
+            return DatabaseConnection._MIN_DATE
+        if dt_lower in ("datetime", "timestamp"):
+            return DatabaseConnection._MIN_DATETIME
         return ""
 
     def _validate_and_fix_row(
@@ -1115,6 +1178,8 @@ class DatabaseConnection:
         - Missing nullable fields → NULL (both modes)
         - Missing non-nullable fields → skip row (STRICT), default value (PERMISSIVE)
         - String exceeding varchar limit → skip row (STRICT), truncate (PERMISSIVE)
+        - Integer out of range → skip row (STRICT), NULL if nullable else skip (PERMISSIVE)
+        - Empty/null datetime → NULL if nullable, min datetime (PERMISSIVE), skip (STRICT)
 
         Args:
             row_data: The transformed row data (db_column → value)
@@ -1169,22 +1234,78 @@ class DatabaseConnection:
             # Check varchar limit
             varchar_limit = self._get_varchar_limit(col_mapping.data_type)
             if varchar_limit is not None and db_col in row_data and row_data[db_col] is not None:
-                value = str(row_data[db_col])
-                if len(value) > varchar_limit:
+                str_value = str(row_data[db_col])
+                if len(str_value) > varchar_limit:
                     if failure_mode == FailureMode.STRICT:
                         logger.warning(
                             f"STRICT mode: Skipping row - value for '{db_col}' "
                             f"exceeds varchar({varchar_limit}) limit "
-                            f"(length {len(value)})"
+                            f"(length {len(str_value)})"
                         )
                         return None
                     else:
                         # PERMISSIVE: truncate
                         logger.warning(
                             f"PERMISSIVE mode: Truncating value for '{db_col}' "
-                            f"from {len(value)} to {varchar_limit} characters"
+                            f"from {len(str_value)} to {varchar_limit} characters"
                         )
-                        row_data[db_col] = value[:varchar_limit]
+                        row_data[db_col] = str_value[:varchar_limit]
+
+            # Check integer range
+            int_range = self._get_integer_range(col_mapping.data_type)
+            if int_range is not None and db_col in row_data and row_data[db_col] is not None:
+                try:
+                    int_value = int(row_data[db_col])
+                except (ValueError, TypeError):
+                    int_value = None
+
+                if int_value is not None and (int_value < int_range[0] or int_value > int_range[1]):
+                    type_name = col_mapping.data_type or "integer"
+                    if failure_mode == FailureMode.STRICT:
+                        logger.warning(
+                            f"STRICT mode: Skipping row - value {int_value} for "
+                            f"'{db_col}' is out of {type_name} range "
+                            f"[{int_range[0]}, {int_range[1]}]"
+                        )
+                        return None
+                    else:
+                        # PERMISSIVE: use NULL if nullable, otherwise skip
+                        if col_mapping.nullable is not False:
+                            logger.warning(
+                                f"PERMISSIVE mode: Setting '{db_col}' to NULL - "
+                                f"value {int_value} is out of {type_name} range"
+                            )
+                            row_data[db_col] = None
+                        else:
+                            logger.warning(
+                                f"PERMISSIVE mode: Skipping row - value {int_value} "
+                                f"for non-nullable '{db_col}' is out of {type_name} "
+                                f"range and cannot be set to NULL"
+                            )
+                            return None
+
+            # Check datetime empty/null values
+            if (
+                self._is_datetime_type(col_mapping.data_type)
+                and db_col in row_data
+                and self._is_empty_datetime_value(row_data[db_col])
+            ):
+                if col_mapping.nullable is not False:
+                    row_data[db_col] = None
+                elif failure_mode == FailureMode.STRICT:
+                    logger.warning(
+                        f"STRICT mode: Skipping row - empty datetime value "
+                        f"for non-nullable field '{db_col}'"
+                    )
+                    return None
+                else:
+                    # PERMISSIVE: use minimum datetime
+                    default = self._get_default_value(col_mapping.data_type)
+                    logger.warning(
+                        f"PERMISSIVE mode: Using minimum datetime {default!r} "
+                        f"for empty non-nullable field '{db_col}'"
+                    )
+                    row_data[db_col] = default
 
         return row_data
 
