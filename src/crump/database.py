@@ -92,8 +92,23 @@ class DatabaseBackend(Protocol):
         """Get set of existing column names in a table."""
         ...
 
+    def get_existing_columns_with_types(self, table_name: str) -> dict[str, str]:
+        """Get existing column names and their data types.
+
+        Returns:
+            Dictionary mapping lowercase column names to their SQL type strings.
+        """
+        ...
+
     def add_column(self, table_name: str, column_name: str, column_type: str) -> None:
         """Add a new column to an existing table."""
+        ...
+
+    def alter_column_type(self, table_name: str, column_name: str, new_type: str) -> None:
+        """Alter an existing column's data type (widen).
+
+        Used for safe schema evolution like integer→bigint or varchar(4)→varchar(10).
+        """
         ...
 
     def upsert_row(
@@ -243,12 +258,47 @@ class PostgreSQLBackend:
         results = self.fetchall(query, (table_name,))
         return {row[0].lower() for row in results}
 
+    def get_existing_columns_with_types(self, table_name: str) -> dict[str, str]:
+        """Get existing column names and their data types."""
+        query = """
+            SELECT column_name, data_type, character_maximum_length
+            FROM information_schema.columns
+            WHERE LOWER(table_name) = LOWER(%s)
+        """
+        results = self.fetchall(query, (table_name,))
+        col_types: dict[str, str] = {}
+        for row in results:
+            col_name = row[0].lower()
+            data_type = row[1].lower()
+            char_max_len = row[2]
+            if data_type == "character varying" and char_max_len is not None:
+                col_types[col_name] = f"varchar({char_max_len})"
+            elif data_type == "integer":
+                col_types[col_name] = "integer"
+            elif data_type == "bigint":
+                col_types[col_name] = "bigint"
+            else:
+                col_types[col_name] = data_type
+        return col_types
+
     def add_column(self, table_name: str, column_name: str, column_type: str) -> None:
         """Add a new column to an existing table."""
         query = sql.SQL("ALTER TABLE {} ADD COLUMN {} {}").format(
             sql.Identifier(table_name),
             sql.Identifier(column_name),
             sql.SQL(column_type),
+        )
+        self.execute(query.as_string(self.conn))
+        self.commit()
+
+    def alter_column_type(self, table_name: str, column_name: str, new_type: str) -> None:
+        """Alter an existing column's data type."""
+        # Strip nullable constraints for the ALTER TYPE statement
+        type_only = new_type.split(" NULL")[0].split(" NOT")[0].strip()
+        query = sql.SQL("ALTER TABLE {} ALTER COLUMN {} TYPE {}").format(
+            sql.Identifier(table_name),
+            sql.Identifier(column_name),
+            sql.SQL(type_only),
         )
         self.execute(query.as_string(self.conn))
         self.commit()
@@ -566,11 +616,35 @@ class SQLiteBackend:
         # PRAGMA table_info returns: (cid, name, type, notnull, dflt_value, pk)
         return {row[1].lower() for row in results}
 
+    def get_existing_columns_with_types(self, table_name: str) -> dict[str, str]:
+        """Get existing column names and their data types."""
+        query = f'PRAGMA table_info("{table_name}")'
+        results = self.fetchall(query)
+        # PRAGMA table_info returns: (cid, name, type, notnull, dflt_value, pk)
+        col_types: dict[str, str] = {}
+        for row in results:
+            col_name = row[1].lower()
+            col_type = row[2].lower() if row[2] else "text"
+            col_types[col_name] = col_type
+        return col_types
+
     def add_column(self, table_name: str, column_name: str, column_type: str) -> None:
         """Add a new column to an existing table."""
         query = f'ALTER TABLE "{table_name}" ADD COLUMN "{column_name}" {column_type}'
         self.execute(query)
         self.commit()
+
+    def alter_column_type(self, table_name: str, column_name: str, new_type: str) -> None:
+        """Alter an existing column's data type.
+
+        SQLite doesn't support ALTER COLUMN TYPE directly. Since SQLite uses
+        dynamic typing, the existing data is already compatible. We log the
+        change but no SQL migration is needed — SQLite type affinity handles it.
+        """
+        logger.info(
+            f"SQLite: Column '{column_name}' in '{table_name}' type change noted "
+            f"(new type: {new_type}). SQLite uses dynamic typing, no migration needed."
+        )
 
     def upsert_row(
         self, table_name: str, conflict_columns: list[str], row_data: dict[str, Any]
@@ -802,11 +876,23 @@ class DatabaseConnection:
             raise RuntimeError("Database connection not established")
         return self.backend.get_existing_columns(table_name)
 
+    def get_existing_columns_with_types(self, table_name: str) -> dict[str, str]:
+        """Get existing column names and their data types."""
+        if not self.backend:
+            raise RuntimeError("Database connection not established")
+        return self.backend.get_existing_columns_with_types(table_name)
+
     def add_column(self, table_name: str, column_name: str, column_type: str) -> None:
         """Add a new column to an existing table."""
         if not self.backend:
             raise RuntimeError("Database connection not established")
         self.backend.add_column(table_name, column_name, column_type)
+
+    def alter_column_type(self, table_name: str, column_name: str, new_type: str) -> None:
+        """Alter an existing column's data type (widen)."""
+        if not self.backend:
+            raise RuntimeError("Database connection not established")
+        self.backend.alter_column_type(table_name, column_name, new_type)
 
     def upsert_row(
         self, table_name: str, conflict_columns: list[str], row_data: dict[str, Any]
@@ -988,10 +1074,49 @@ class DatabaseConnection:
 
         return columns_def
 
+    @staticmethod
+    def _is_safe_type_widening(old_type: str, new_type: str) -> bool:
+        """Check if changing from old_type to new_type is a safe widening operation.
+
+        Safe widenings include:
+        - integer → bigint
+        - varchar(N) → varchar(M) where M > N
+
+        Args:
+            old_type: Current SQL type (lowercase)
+            new_type: Desired SQL type (may contain NULL/NOT NULL constraints)
+
+        Returns:
+            True if the type change is a safe widening
+        """
+        import re as _re
+
+        # Strip nullable constraints from new_type for comparison
+        new_type_clean = new_type.lower().split(" null")[0].split(" not")[0].strip()
+        old_type_clean = old_type.lower().strip()
+
+        # integer → bigint
+        if old_type_clean == "integer" and new_type_clean == "bigint":
+            return True
+
+        # varchar(N) → varchar(M) where M > N
+        old_match = _re.match(r"varchar\((\d+)\)", old_type_clean)
+        new_match = _re.match(r"varchar\((\d+)\)", new_type_clean)
+        if old_match and new_match:
+            old_len = int(old_match.group(1))
+            new_len = int(new_match.group(1))
+            if new_len > old_len:
+                return True
+
+        return False
+
     def _setup_table_schema(
         self, job: CrumpJob, columns_def: dict[str, str], primary_keys: list[str]
     ) -> bool:
         """Create table and add missing columns/indexes.
+
+        Also detects safe type widenings (e.g. integer→bigint, varchar(4)→varchar(10))
+        and issues ALTER COLUMN statements to update the schema.
 
         Args:
             job: CrumpJob configuration
@@ -1012,12 +1137,24 @@ class DatabaseConnection:
         if not table_existed:
             schema_changed = True
 
-        # Check for schema evolution: add missing columns from config
+        # Check for schema evolution: add missing columns or widen existing ones
         existing_columns = self.get_existing_columns(job.target_table)
+        existing_types = self.get_existing_columns_with_types(job.target_table)
         for col_name, col_type in columns_def.items():
-            if col_name.lower() not in existing_columns:
+            col_lower = col_name.lower()
+            if col_lower not in existing_columns:
                 self.add_column(job.target_table, col_name, col_type)
                 schema_changed = True
+            elif col_lower in existing_types:
+                # Column exists — check if the type needs widening
+                old_type = existing_types[col_lower]
+                if self._is_safe_type_widening(old_type, col_type):
+                    logger.info(
+                        f"Widening column '{col_name}' in '{job.target_table}' "
+                        f"from {old_type} to {col_type}"
+                    )
+                    self.alter_column_type(job.target_table, col_name, col_type)
+                    schema_changed = True
 
         # Create indexes that don't already exist
         if job.indexes:

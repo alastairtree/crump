@@ -95,6 +95,53 @@ def table_exists(db_url: str, table_name: str) -> bool:
         conn.close()
 
 
+def get_column_types(db_url: str, table_name: str) -> dict[str, str]:
+    """Get column names and their data types from a table.
+
+    Args:
+        db_url: Database connection URL
+        table_name: Name of the table
+
+    Returns:
+        Dictionary mapping lowercase column names to their SQL type strings.
+    """
+    conn, cursor, is_sqlite = _get_db_connection(db_url)
+
+    try:
+        if is_sqlite:
+            cursor.execute(f'PRAGMA table_info("{table_name}")')
+            col_types: dict[str, str] = {}
+            for row in cursor.fetchall():
+                col_types[row[1].lower()] = row[2].lower() if row[2] else "text"
+            return col_types
+        else:
+            cursor.execute(
+                """
+                SELECT column_name, data_type, character_maximum_length
+                FROM information_schema.columns
+                WHERE LOWER(table_name) = LOWER(%s)
+                """,
+                (table_name,),
+            )
+            col_types = {}
+            for row in cursor.fetchall():
+                col_name = row[0].lower()
+                data_type = row[1].lower()
+                char_max_len = row[2]
+                if data_type == "character varying" and char_max_len is not None:
+                    col_types[col_name] = f"varchar({char_max_len})"
+                elif data_type == "integer":
+                    col_types[col_name] = "integer"
+                elif data_type == "bigint":
+                    col_types[col_name] = "bigint"
+                else:
+                    col_types[col_name] = data_type
+            return col_types
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def get_table_indexes(db_url: str, table_name: str) -> set[str]:
     """Get index names from a table for any database type."""
     if db_url.startswith("sqlite"):
