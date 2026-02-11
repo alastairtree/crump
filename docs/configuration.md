@@ -604,8 +604,10 @@ jobs:
 | Mismatch | STRICT | PERMISSIVE |
 |----------|--------|------------|
 | CSV missing a **nullable** field | Insert NULL | Insert NULL |
-| CSV missing a **non-nullable** field | Skip row | Use default: `0` for integers, `""` for strings |
+| CSV missing a **non-nullable** field | Skip row | Use default: `0` for integers, `""` for strings, min date for dates |
 | String exceeds **varchar(N)** limit | Skip row | Truncate to N characters |
+| Integer **out of range** for type | Skip row | NULL if nullable, skip row if not |
+| Empty/null **date/datetime** value | NULL if nullable, skip row if not | NULL if nullable, min datetime if not |
 
 #### Examples
 

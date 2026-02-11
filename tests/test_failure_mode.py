@@ -1,5 +1,6 @@
 """Tests for failure_mode handling of data/config mismatches."""
 
+import datetime
 from pathlib import Path
 
 import pytest
@@ -526,3 +527,321 @@ jobs:
         results = execute_query(db_url, "SELECT id, name, missing_col FROM test_table")
         assert len(results) == 1
         assert results[0] == ("1", "Alice", 0)
+
+
+# ---------------------------------------------------------------------------
+# Integer out-of-range tests (runs against both backends)
+# ---------------------------------------------------------------------------
+
+
+class TestIntegerOutOfRange:
+    """CSV contains integer values outside the valid range for the column type.
+
+    STRICT should skip the row.
+    PERMISSIVE should use NULL if nullable, or skip if non-nullable.
+    """
+
+    @pytest.fixture()
+    def csv_file_overflow(self, tmp_path: Path) -> Path:
+        """CSV with integer values that overflow a standard 4-byte integer."""
+        return create_csv_file(
+            tmp_path / "data.csv",
+            ["id", "value"],
+            [
+                {"id": "1", "value": "100"},  # in range
+                {"id": "2", "value": "3000000000"},  # exceeds integer max (2147483647)
+                {"id": "3", "value": "-3000000000"},  # below integer min (-2147483648)
+                {"id": "4", "value": "42"},  # in range
+            ],
+        )
+
+    def test_strict_skips_out_of_range_integer(self, csv_file_overflow: Path, db_url: str) -> None:
+        """STRICT skips rows with out-of-range integers."""
+        job = CrumpJob(
+            name="test",
+            target_table="test_int_strict",
+            id_mapping=[ColumnMapping("id", "id")],
+            columns=[
+                ColumnMapping("value", "value", data_type="integer"),
+            ],
+            failure_mode=FailureMode.STRICT,
+        )
+        rows = sync_file_to_db(csv_file_overflow, job, db_url)
+        assert rows == 2  # rows 2 and 3 skipped
+        results = execute_query(db_url, 'SELECT id, value FROM "test_int_strict" ORDER BY id')
+        assert len(results) == 2
+        assert results[0][0] == "1"
+        assert results[1][0] == "4"
+
+    def test_permissive_nulls_out_of_range_integer_nullable(
+        self, csv_file_overflow: Path, db_url: str
+    ) -> None:
+        """PERMISSIVE sets out-of-range integer to NULL when column is nullable."""
+        job = CrumpJob(
+            name="test",
+            target_table="test_int_permissive_nullable",
+            id_mapping=[ColumnMapping("id", "id")],
+            columns=[
+                ColumnMapping("value", "value", data_type="integer", nullable=True),
+            ],
+            failure_mode=FailureMode.PERMISSIVE,
+        )
+        rows = sync_file_to_db(csv_file_overflow, job, db_url)
+        assert rows == 4  # all rows imported
+        results = execute_query(
+            db_url,
+            'SELECT id, value FROM "test_int_permissive_nullable" ORDER BY id',
+        )
+        assert len(results) == 4
+        assert results[0] == ("1", 100)
+        assert results[1] == ("2", None)  # out of range → NULL
+        assert results[2] == ("3", None)  # out of range → NULL
+        assert results[3] == ("4", 42)
+
+    def test_permissive_skips_out_of_range_integer_not_nullable(
+        self, csv_file_overflow: Path, db_url: str
+    ) -> None:
+        """PERMISSIVE skips rows with out-of-range integers when column is NOT nullable."""
+        job = CrumpJob(
+            name="test",
+            target_table="test_int_permissive_notnull",
+            id_mapping=[ColumnMapping("id", "id")],
+            columns=[
+                ColumnMapping("value", "value", data_type="integer", nullable=False),
+            ],
+            failure_mode=FailureMode.PERMISSIVE,
+        )
+        rows = sync_file_to_db(csv_file_overflow, job, db_url)
+        assert rows == 2  # rows 2 and 3 skipped (can't null, can't fit)
+        results = execute_query(
+            db_url,
+            'SELECT id, value FROM "test_int_permissive_notnull" ORDER BY id',
+        )
+        assert len(results) == 2
+        assert results[0][0] == "1"
+        assert results[1][0] == "4"
+
+    def test_bigint_allows_larger_values(self, tmp_path: Path, db_url: str) -> None:
+        """Values that overflow integer should fit in bigint."""
+        csv_file = create_csv_file(
+            tmp_path / "data.csv",
+            ["id", "big_value"],
+            [
+                {"id": "1", "big_value": "3000000000"},  # exceeds int, fits bigint
+                {"id": "2", "big_value": "-3000000000"},
+            ],
+        )
+        job = CrumpJob(
+            name="test",
+            target_table="test_bigint",
+            id_mapping=[ColumnMapping("id", "id")],
+            columns=[
+                ColumnMapping("big_value", "big_value", data_type="bigint"),
+            ],
+            failure_mode=FailureMode.STRICT,
+        )
+        rows = sync_file_to_db(csv_file, job, db_url)
+        assert rows == 2  # both fit in bigint
+
+    def test_strict_all_out_of_range_raises(self, tmp_path: Path, db_url: str) -> None:
+        """STRICT raises ValueError when ALL rows have out-of-range integers."""
+        csv_file = create_csv_file(
+            tmp_path / "data.csv",
+            ["id", "value"],
+            [
+                {"id": "1", "value": "9999999999"},
+            ],
+        )
+        job = CrumpJob(
+            name="test",
+            target_table="test_int_all_bad",
+            id_mapping=[ColumnMapping("id", "id")],
+            columns=[
+                ColumnMapping("value", "value", data_type="integer"),
+            ],
+            failure_mode=FailureMode.STRICT,
+        )
+        with pytest.raises(ValueError, match="All 1 row.*rejected"):
+            sync_file_to_db(csv_file, job, db_url)
+
+
+# ---------------------------------------------------------------------------
+# Datetime empty/null handling tests (runs against both backends)
+# ---------------------------------------------------------------------------
+
+
+class TestDatetimeEmptyHandling:
+    """CSV contains empty or null datetime values.
+
+    Both modes: nullable datetime → NULL.
+    STRICT: non-nullable empty datetime → skip row.
+    PERMISSIVE: non-nullable empty datetime → minimum datetime.
+    """
+
+    def test_nullable_datetime_empty_becomes_null(self, tmp_path: Path, db_url: str) -> None:
+        """Empty datetime in a nullable column becomes NULL in both modes."""
+        csv_file = create_csv_file(
+            tmp_path / "data.csv",
+            ["id", "event_date"],
+            [
+                {"id": "1", "event_date": ""},
+                {"id": "2", "event_date": "2024-01-15"},
+            ],
+        )
+        for mode in (FailureMode.STRICT, FailureMode.PERMISSIVE):
+            job = CrumpJob(
+                name="test",
+                target_table=f"test_dt_null_{mode.value}",
+                id_mapping=[ColumnMapping("id", "id")],
+                columns=[
+                    ColumnMapping("event_date", "event_date", data_type="date", nullable=True),
+                ],
+                failure_mode=mode,
+            )
+            rows = sync_file_to_db(csv_file, job, db_url)
+            assert rows == 2
+            results = execute_query(
+                db_url,
+                f'SELECT id, event_date FROM "test_dt_null_{mode.value}" ORDER BY id',
+            )
+            assert results[0][0] == "1"
+            assert results[0][1] is None  # empty → NULL
+            assert results[1][0] == "2"
+
+    def test_strict_skips_empty_non_nullable_datetime(self, tmp_path: Path, db_url: str) -> None:
+        """STRICT skips rows with empty datetime when column is NOT nullable."""
+        csv_file = create_csv_file(
+            tmp_path / "data.csv",
+            ["id", "event_date"],
+            [
+                {"id": "1", "event_date": ""},
+                {"id": "2", "event_date": "2024-01-15"},
+            ],
+        )
+        job = CrumpJob(
+            name="test",
+            target_table="test_dt_strict_notnull",
+            id_mapping=[ColumnMapping("id", "id")],
+            columns=[
+                ColumnMapping("event_date", "event_date", data_type="date", nullable=False),
+            ],
+            failure_mode=FailureMode.STRICT,
+        )
+        rows = sync_file_to_db(csv_file, job, db_url)
+        assert rows == 1  # row 1 skipped
+        results = execute_query(
+            db_url,
+            'SELECT id FROM "test_dt_strict_notnull" ORDER BY id',
+        )
+        assert len(results) == 1
+        assert results[0][0] == "2"
+
+    def test_permissive_uses_min_datetime_for_empty_non_nullable(
+        self, tmp_path: Path, db_url: str
+    ) -> None:
+        """PERMISSIVE uses minimum datetime for empty non-nullable datetime column."""
+        csv_file = create_csv_file(
+            tmp_path / "data.csv",
+            ["id", "event_date"],
+            [
+                {"id": "1", "event_date": ""},
+                {"id": "2", "event_date": "2024-01-15"},
+            ],
+        )
+        job = CrumpJob(
+            name="test",
+            target_table="test_dt_permissive_notnull",
+            id_mapping=[ColumnMapping("id", "id")],
+            columns=[
+                ColumnMapping("event_date", "event_date", data_type="date", nullable=False),
+            ],
+            failure_mode=FailureMode.PERMISSIVE,
+        )
+        rows = sync_file_to_db(csv_file, job, db_url)
+        assert rows == 2  # all rows imported
+        results = execute_query(
+            db_url,
+            'SELECT id, event_date FROM "test_dt_permissive_notnull" ORDER BY id',
+        )
+        assert results[0][0] == "1"
+        # Check that the first row got the minimum date
+        min_date = results[0][1]
+        assert min_date is not None
+        # SQLite stores dates as strings, so check for the min date string
+        if isinstance(min_date, str):
+            assert min_date in ("0001-01-01", "1-01-01", "1-1-1")
+        else:
+            assert min_date == datetime.date(1, 1, 1)
+
+    def test_datetime_type_empty_becomes_null(self, tmp_path: Path, db_url: str) -> None:
+        """Empty datetime type (not just date) in nullable column becomes NULL."""
+        csv_file = create_csv_file(
+            tmp_path / "data.csv",
+            ["id", "ts"],
+            [
+                {"id": "1", "ts": ""},
+                {"id": "2", "ts": "   "},  # whitespace-only
+                {"id": "3", "ts": "2024-01-15 10:30:00"},
+            ],
+        )
+        job = CrumpJob(
+            name="test",
+            target_table="test_datetime_empty",
+            id_mapping=[ColumnMapping("id", "id")],
+            columns=[
+                ColumnMapping("ts", "ts", data_type="datetime", nullable=True),
+            ],
+            failure_mode=FailureMode.PERMISSIVE,
+        )
+        rows = sync_file_to_db(csv_file, job, db_url)
+        assert rows == 3
+        results = execute_query(db_url, 'SELECT id, ts FROM "test_datetime_empty" ORDER BY id')
+        assert results[0][1] is None  # empty → NULL
+        assert results[1][1] is None  # whitespace → NULL
+
+    def test_timestamp_type_handled_same_as_datetime(self, tmp_path: Path, db_url: str) -> None:
+        """Timestamp type is treated the same as datetime."""
+        csv_file = create_csv_file(
+            tmp_path / "data.csv",
+            ["id", "created_at"],
+            [
+                {"id": "1", "created_at": ""},
+            ],
+        )
+        job = CrumpJob(
+            name="test",
+            target_table="test_timestamp",
+            id_mapping=[ColumnMapping("id", "id")],
+            columns=[
+                ColumnMapping("created_at", "created_at", data_type="timestamp", nullable=True),
+            ],
+            failure_mode=FailureMode.STRICT,
+        )
+        rows = sync_file_to_db(csv_file, job, db_url)
+        assert rows == 1
+        results = execute_query(db_url, 'SELECT created_at FROM "test_timestamp"')
+        assert results[0][0] is None
+
+    def test_strict_all_empty_datetime_non_nullable_raises(
+        self, tmp_path: Path, db_url: str
+    ) -> None:
+        """STRICT raises ValueError when ALL rows have empty non-nullable datetime."""
+        csv_file = create_csv_file(
+            tmp_path / "data.csv",
+            ["id", "event_date"],
+            [
+                {"id": "1", "event_date": ""},
+                {"id": "2", "event_date": ""},
+            ],
+        )
+        job = CrumpJob(
+            name="test",
+            target_table="test_dt_all_empty",
+            id_mapping=[ColumnMapping("id", "id")],
+            columns=[
+                ColumnMapping("event_date", "event_date", data_type="date", nullable=False),
+            ],
+            failure_mode=FailureMode.STRICT,
+        )
+        with pytest.raises(ValueError, match="All 2 row.*rejected"):
+            sync_file_to_db(csv_file, job, db_url)

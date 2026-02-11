@@ -742,6 +742,8 @@ jobs:
 | CSV missing a non-nullable integer field | Skip row | Insert `0` |
 | CSV missing a non-nullable text field | Skip row | Insert `""` |
 | String exceeds varchar(N) limit | Skip row | Truncate to N chars |
+| Integer out of range for column type | Skip row | NULL if nullable, skip if not |
+| Empty/null date or datetime value | NULL if nullable, skip if not | NULL if nullable, min datetime (`0001-01-01`) if not |
 
 ### Tips
 
