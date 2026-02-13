@@ -845,3 +845,180 @@ class TestDatetimeEmptyHandling:
         )
         with pytest.raises(ValueError, match="All 2 row.*rejected"):
             sync_file_to_db(csv_file, job, db_url)
+
+
+# ---------------------------------------------------------------------------
+# Grouped warning summary tests
+# ---------------------------------------------------------------------------
+
+
+class TestValidationWarningSummary:
+    """Test that validation warnings are grouped into summary messages.
+
+    When many rows trigger the same kind of warning, the log should contain
+    one summary message per category rather than one per row.
+    """
+
+    def test_log_validation_summary_unit(self) -> None:
+        """Unit test for _log_validation_summary emitting grouped messages."""
+        import logging
+        import logging.handlers
+
+        from crump.database import DatabaseConnection
+
+        db_logger = logging.getLogger("crump.database")
+        handler = logging.handlers.MemoryHandler(capacity=100)
+        handler.setLevel(logging.WARNING)
+        db_logger.addHandler(handler)
+
+        try:
+            warning_counts = {
+                "skip:varchar_exceeded:name:50": 42,
+                "fix:varchar_truncated:code:4": 100,
+                "skip:int_out_of_range:value:integer": 7,
+            }
+            DatabaseConnection._log_validation_summary(warning_counts)
+            handler.flush()
+
+            messages = [record.getMessage() for record in handler.buffer]
+            assert len(messages) == 3
+
+            # Check each summary message contains the count and is grouped
+            varchar_skip = [m for m in messages if "varchar(50)" in m and "Skipped" in m]
+            assert len(varchar_skip) == 1
+            assert "42 rows" in varchar_skip[0]
+
+            varchar_trunc = [m for m in messages if "varchar(4)" in m and "Truncated" in m]
+            assert len(varchar_trunc) == 1
+            assert "100 rows" in varchar_trunc[0]
+
+            int_skip = [m for m in messages if "integer" in m and "Skipped" in m]
+            assert len(int_skip) == 1
+            assert "7 rows" in int_skip[0]
+        finally:
+            db_logger.removeHandler(handler)
+
+    def test_singular_row_word_for_count_one(self) -> None:
+        """When count is 1, summary should say 'row' not 'rows'."""
+        import logging
+        import logging.handlers
+
+        from crump.database import DatabaseConnection
+
+        db_logger = logging.getLogger("crump.database")
+        handler = logging.handlers.MemoryHandler(capacity=100)
+        handler.setLevel(logging.WARNING)
+        db_logger.addHandler(handler)
+
+        try:
+            DatabaseConnection._log_validation_summary({"skip:varchar_exceeded:name:50": 1})
+            handler.flush()
+            msg = handler.buffer[0].getMessage()
+            assert "1 row" in msg
+            assert "1 rows" not in msg
+        finally:
+            db_logger.removeHandler(handler)
+
+    def test_many_rows_truncated_produces_one_summary(self, tmp_path: Path, db_url: str) -> None:
+        """Syncing many rows that exceed varchar limit produces grouped summary."""
+        import logging
+        import logging.handlers
+
+        # Create CSV with 50 rows that all exceed varchar(4) limit
+        rows = [{"id": str(i), "code": "TOOLONGVALUE"} for i in range(50)]
+        csv_file = create_csv_file(
+            tmp_path / "data.csv",
+            ["id", "code"],
+            rows,
+        )
+        job = CrumpJob(
+            name="test",
+            target_table="test_grouped_warn",
+            id_mapping=[ColumnMapping("id", "id")],
+            columns=[
+                ColumnMapping("code", "code", data_type="varchar(4)"),
+            ],
+            failure_mode=FailureMode.PERMISSIVE,
+        )
+
+        db_logger = logging.getLogger("crump.database")
+        handler = logging.handlers.MemoryHandler(capacity=200)
+        handler.setLevel(logging.WARNING)
+        db_logger.addHandler(handler)
+
+        try:
+            rows_synced = sync_file_to_db(csv_file, job, db_url)
+            handler.flush()
+
+            assert rows_synced == 50
+
+            messages = [record.getMessage() for record in handler.buffer]
+
+            # Should have exactly 1 truncation summary, NOT 50 per-row messages
+            trunc_msgs = [m for m in messages if "Truncated" in m]
+            assert len(trunc_msgs) == 1
+            assert "50 rows" in trunc_msgs[0]
+            assert "varchar(4)" in trunc_msgs[0]
+        finally:
+            db_logger.removeHandler(handler)
+
+    def test_many_rows_skipped_strict_produces_one_summary(
+        self, tmp_path: Path, db_url: str
+    ) -> None:
+        """STRICT mode skipping many rows produces grouped summary before raising."""
+        import logging
+        import logging.handlers
+
+        rows = [{"id": str(i), "code": "TOOLONG"} for i in range(20)]
+        csv_file = create_csv_file(
+            tmp_path / "data.csv",
+            ["id", "code"],
+            rows,
+        )
+        job = CrumpJob(
+            name="test",
+            target_table="test_grouped_strict",
+            id_mapping=[ColumnMapping("id", "id")],
+            columns=[
+                ColumnMapping("code", "code", data_type="varchar(4)"),
+            ],
+            failure_mode=FailureMode.STRICT,
+        )
+
+        db_logger = logging.getLogger("crump.database")
+        handler = logging.handlers.MemoryHandler(capacity=200)
+        handler.setLevel(logging.WARNING)
+        db_logger.addHandler(handler)
+
+        try:
+            with pytest.raises(ValueError, match="All 20 row.*rejected"):
+                sync_file_to_db(csv_file, job, db_url)
+            handler.flush()
+
+            messages = [record.getMessage() for record in handler.buffer]
+
+            # Should have 1 grouped skip summary + 1 "Skipped N rows" summary
+            skip_msgs = [m for m in messages if "Skipped 20 rows" in m]
+            assert len(skip_msgs) >= 1
+            assert "varchar(4)" in skip_msgs[0]
+        finally:
+            db_logger.removeHandler(handler)
+
+    def test_empty_warning_counts_produces_no_log(self) -> None:
+        """Empty warning_counts dict should not produce any log messages."""
+        import logging
+        import logging.handlers
+
+        from crump.database import DatabaseConnection
+
+        db_logger = logging.getLogger("crump.database")
+        handler = logging.handlers.MemoryHandler(capacity=100)
+        handler.setLevel(logging.WARNING)
+        db_logger.addHandler(handler)
+
+        try:
+            DatabaseConnection._log_validation_summary({})
+            handler.flush()
+            assert len(handler.buffer) == 0
+        finally:
+            db_logger.removeHandler(handler)
