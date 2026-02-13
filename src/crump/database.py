@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 import logging
 import sqlite3
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -1308,6 +1309,7 @@ class DatabaseConnection:
         sync_columns: list[Any],
         job: CrumpJob,
         csv_row: dict[str, Any],
+        warning_counts: dict[str, int] | None = None,
     ) -> dict[str, Any] | None:
         """Validate a transformed row and apply failure_mode rules.
 
@@ -1318,16 +1320,28 @@ class DatabaseConnection:
         - Integer out of range → skip row (STRICT), NULL if nullable else skip (PERMISSIVE)
         - Empty/null datetime → NULL if nullable, min datetime (PERMISSIVE), skip (STRICT)
 
+        Instead of logging per-row warnings, increments counts in warning_counts
+        so that a grouped summary can be emitted once after all rows are processed.
+
         Args:
             row_data: The transformed row data (db_column → value)
             sync_columns: List of ColumnMapping objects
             job: CrumpJob configuration
             csv_row: The original CSV row (for context in logging)
+            warning_counts: Optional dict to accumulate warning counts by category.
+                If None, warnings are logged individually (backwards compatible).
 
         Returns:
             The validated/fixed row_data dict, or None if the row should be skipped
         """
         failure_mode = job.failure_mode
+
+        def _warn(key: str, msg: str) -> None:
+            """Record a warning: group into counts if available, else log directly."""
+            if warning_counts is not None:
+                warning_counts[key] = warning_counts.get(key, 0) + 1
+            else:
+                logger.warning(msg)
 
         for col_mapping in sync_columns:
             db_col = col_mapping.db_column
@@ -1352,16 +1366,18 @@ class DatabaseConnection:
                 if col_mapping.nullable is False:
                     # Non-nullable field missing
                     if failure_mode == FailureMode.STRICT:
-                        logger.warning(
-                            f"STRICT mode: Skipping row - missing non-nullable field '{db_col}'"
+                        _warn(
+                            f"skip:missing_non_nullable:{db_col}",
+                            f"STRICT mode: Skipping row - missing non-nullable field '{db_col}'",
                         )
                         return None
                     else:
                         # PERMISSIVE: use default value
                         default = self._get_default_value(col_mapping.data_type)
-                        logger.warning(
+                        _warn(
+                            f"fix:default_for_missing:{db_col}:{default!r}",
                             f"PERMISSIVE mode: Using default value {default!r} "
-                            f"for missing non-nullable field '{db_col}'"
+                            f"for missing non-nullable field '{db_col}'",
                         )
                         row_data[db_col] = default
                 else:
@@ -1374,17 +1390,19 @@ class DatabaseConnection:
                 str_value = str(row_data[db_col])
                 if len(str_value) > varchar_limit:
                     if failure_mode == FailureMode.STRICT:
-                        logger.warning(
+                        _warn(
+                            f"skip:varchar_exceeded:{db_col}:{varchar_limit}",
                             f"STRICT mode: Skipping row - value for '{db_col}' "
                             f"exceeds varchar({varchar_limit}) limit "
-                            f"(length {len(str_value)})"
+                            f"(length {len(str_value)})",
                         )
                         return None
                     else:
                         # PERMISSIVE: truncate
-                        logger.warning(
+                        _warn(
+                            f"fix:varchar_truncated:{db_col}:{varchar_limit}",
                             f"PERMISSIVE mode: Truncating value for '{db_col}' "
-                            f"from {len(str_value)} to {varchar_limit} characters"
+                            f"from {len(str_value)} to {varchar_limit} characters",
                         )
                         row_data[db_col] = str_value[:varchar_limit]
 
@@ -1399,25 +1417,28 @@ class DatabaseConnection:
                 if int_value is not None and (int_value < int_range[0] or int_value > int_range[1]):
                     type_name = col_mapping.data_type or "integer"
                     if failure_mode == FailureMode.STRICT:
-                        logger.warning(
+                        _warn(
+                            f"skip:int_out_of_range:{db_col}:{type_name}",
                             f"STRICT mode: Skipping row - value {int_value} for "
                             f"'{db_col}' is out of {type_name} range "
-                            f"[{int_range[0]}, {int_range[1]}]"
+                            f"[{int_range[0]}, {int_range[1]}]",
                         )
                         return None
                     else:
                         # PERMISSIVE: use NULL if nullable, otherwise skip
                         if col_mapping.nullable is not False:
-                            logger.warning(
+                            _warn(
+                                f"fix:int_range_null:{db_col}:{type_name}",
                                 f"PERMISSIVE mode: Setting '{db_col}' to NULL - "
-                                f"value {int_value} is out of {type_name} range"
+                                f"value {int_value} is out of {type_name} range",
                             )
                             row_data[db_col] = None
                         else:
-                            logger.warning(
+                            _warn(
+                                f"skip:int_range_non_nullable:{db_col}:{type_name}",
                                 f"PERMISSIVE mode: Skipping row - value {int_value} "
                                 f"for non-nullable '{db_col}' is out of {type_name} "
-                                f"range and cannot be set to NULL"
+                                f"range and cannot be set to NULL",
                             )
                             return None
 
@@ -1430,21 +1451,94 @@ class DatabaseConnection:
                 if col_mapping.nullable is not False:
                     row_data[db_col] = None
                 elif failure_mode == FailureMode.STRICT:
-                    logger.warning(
+                    _warn(
+                        f"skip:empty_datetime:{db_col}",
                         f"STRICT mode: Skipping row - empty datetime value "
-                        f"for non-nullable field '{db_col}'"
+                        f"for non-nullable field '{db_col}'",
                     )
                     return None
                 else:
                     # PERMISSIVE: use minimum datetime
                     default = self._get_default_value(col_mapping.data_type)
-                    logger.warning(
+                    _warn(
+                        f"fix:min_datetime:{db_col}:{default!r}",
                         f"PERMISSIVE mode: Using minimum datetime {default!r} "
-                        f"for empty non-nullable field '{db_col}'"
+                        f"for empty non-nullable field '{db_col}'",
                     )
                     row_data[db_col] = default
 
         return row_data
+
+    @staticmethod
+    def _log_validation_summary(warning_counts: dict[str, int]) -> None:
+        """Emit grouped summary log messages for validation warnings.
+
+        Each unique warning category is logged once with a count of how many
+        rows were affected, instead of one message per row.
+
+        Args:
+            warning_counts: Dict mapping warning category keys to counts.
+                Keys use the format "action:reason:column[:extra]".
+        """
+        if not warning_counts:
+            return
+
+        for key, count in sorted(warning_counts.items()):
+            parts = key.split(":")
+            action = parts[0]  # "skip" or "fix"
+            reason = parts[1] if len(parts) > 1 else ""
+            col = parts[2] if len(parts) > 2 else ""
+            extra = ":".join(parts[3:]) if len(parts) > 3 else ""
+            rows_word = "row" if count == 1 else "rows"
+
+            if action == "skip" and reason == "missing_non_nullable":
+                msg = (
+                    f"STRICT mode: Skipped {count} {rows_word} — missing non-nullable field '{col}'"
+                )
+            elif action == "fix" and reason == "default_for_missing":
+                msg = (
+                    f"PERMISSIVE mode: Used default value {extra} for {count} "
+                    f"{rows_word} — missing non-nullable field '{col}'"
+                )
+            elif action == "skip" and reason == "varchar_exceeded":
+                msg = (
+                    f"STRICT mode: Skipped {count} {rows_word} — "
+                    f"value for '{col}' exceeds varchar({extra}) limit"
+                )
+            elif action == "fix" and reason == "varchar_truncated":
+                msg = (
+                    f"PERMISSIVE mode: Truncated {count} {rows_word} — "
+                    f"value for '{col}' exceeded varchar({extra}) limit"
+                )
+            elif action == "skip" and reason == "int_out_of_range":
+                msg = (
+                    f"STRICT mode: Skipped {count} {rows_word} — "
+                    f"value for '{col}' out of {extra} range"
+                )
+            elif action == "fix" and reason == "int_range_null":
+                msg = (
+                    f"PERMISSIVE mode: Set '{col}' to NULL for {count} "
+                    f"{rows_word} — value out of {extra} range"
+                )
+            elif action == "skip" and reason == "int_range_non_nullable":
+                msg = (
+                    f"PERMISSIVE mode: Skipped {count} {rows_word} — "
+                    f"value for non-nullable '{col}' out of {extra} range"
+                )
+            elif action == "skip" and reason == "empty_datetime":
+                msg = (
+                    f"STRICT mode: Skipped {count} {rows_word} — "
+                    f"empty datetime value for non-nullable field '{col}'"
+                )
+            elif action == "fix" and reason == "min_datetime":
+                msg = (
+                    f"PERMISSIVE mode: Used minimum datetime for {count} "
+                    f"{rows_word} — empty non-nullable field '{col}'"
+                )
+            else:
+                msg = f"Validation: {key} ({count} {rows_word})"
+
+            logger.warning(msg)
 
     def _process_tabular_rows(
         self,
@@ -1469,6 +1563,7 @@ class DatabaseConnection:
         rows_synced = 0
         rows_skipped = 0
         synced_ids: set[tuple] = set()
+        warning_counts: dict[str, int] = defaultdict(int)
 
         # For sampling, we need to know total row count first
         if job.sample_percentage is not None and job.sample_percentage < 100:
@@ -1487,7 +1582,9 @@ class DatabaseConnection:
                 )
 
                 # Validate and fix row based on failure_mode
-                validated = self._validate_and_fix_row(row_data, sync_columns, job, row)
+                validated = self._validate_and_fix_row(
+                    row_data, sync_columns, job, row, warning_counts
+                )
                 if validated is None:
                     rows_skipped += 1
                     continue
@@ -1507,7 +1604,9 @@ class DatabaseConnection:
                 )
 
                 # Validate and fix row based on failure_mode
-                validated = self._validate_and_fix_row(row_data, sync_columns, job, row)
+                validated = self._validate_and_fix_row(
+                    row_data, sync_columns, job, row, warning_counts
+                )
                 if validated is None:
                     rows_skipped += 1
                     continue
@@ -1518,6 +1617,9 @@ class DatabaseConnection:
                 id_values = tuple(validated[id_col.db_column] for id_col in job.id_mapping)
                 synced_ids.add(id_values)
                 rows_synced += 1
+
+        # Emit grouped validation summary (one message per warning category)
+        self._log_validation_summary(warning_counts)
 
         if rows_skipped > 0:
             logger.warning(f"Skipped {rows_skipped} rows due to validation failures")
