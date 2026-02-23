@@ -21,7 +21,7 @@ Programmatic Usage:
     )
 """
 
-__version__ = "0.5.1"
+__version__ = "0.5.2"
 
 # Export main API functions
 from crump.config import (
