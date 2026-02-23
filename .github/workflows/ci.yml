@@ -50,6 +50,8 @@ jobs:
         include:
           # Test all Python versions on Ubuntu
           - os: ubuntu-latest
+            python-version: "3.10"
+          - os: ubuntu-latest
             python-version: "3.11"
           - os: ubuntu-latest
             python-version: "3.12"

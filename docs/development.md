@@ -6,7 +6,7 @@ Guide for contributing to crump development.
 
 ### Prerequisites
 
-- Python 3.11 or higher
+- Python 3.10 or higher
 - Docker (for integration tests)
 - Git
 
@@ -35,7 +35,7 @@ For the best development experience:
 
 The devcontainer includes:
 
-- Python 3.11 with all dependencies pre-installed via uv
+- Python 3.10 with all dependencies pre-installed via uv
 - Docker-in-Docker for running integration tests
 - VSCode extensions for Python, Ruff, and Docker
 - Proper test and linting configuration
