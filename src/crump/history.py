@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -167,4 +167,4 @@ def get_utc_now() -> datetime:
     Returns:
         Current UTC datetime with timezone info
     """
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
