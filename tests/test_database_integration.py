@@ -1478,9 +1478,9 @@ jobs:
         db_column: active_status
         type: integer
         lookup:
-          True: 1
-          False: 0
-          UNKNOWN: -1
+          "True": 1
+          "False": 0
+          "UNKNOWN": -1
 """)
 
         config = CrumpConfig.from_yaml(config_file)
