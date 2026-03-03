@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "crump"
-version = "0.6.0"
+version = "0.7.0"
 description = "Csv/cdf Read and dUMP - Sync CSV, Parquet, and CDF science files into PostgreSQL database"
 readme = "README.md"
 requires-python = ">=3.10"

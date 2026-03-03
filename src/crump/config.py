@@ -969,6 +969,10 @@ class CrumpConfig:
             if job.sample_percentage is not None and job.sample_percentage != 100:
                 job_dict["sample_percentage"] = job.sample_percentage
 
+            # Add filename_match if present
+            if job.filename_match:
+                job_dict["filename_match"] = job.filename_match
+
             # Add failure_mode if not the default (permissive)
             if job.failure_mode != FailureMode.PERMISSIVE:
                 job_dict["failure_mode"] = job.failure_mode.value
