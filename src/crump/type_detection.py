@@ -13,7 +13,7 @@ def detect_column_type(values: list[str]) -> str:
         values: List of string values from the column (excluding empty strings)
 
     Returns:
-        Detected type: 'bigint', 'integer', 'float', 'date', 'datetime', 'text', or 'varchar(N)'
+        Detected type: 'bigint', 'integer', 'float', 'date', 'datetime', 'boolean', 'text', or 'varchar(N)'
     """
     if not values:
         return "text"
@@ -37,6 +37,10 @@ def detect_column_type(values: list[str]) -> str:
     # Check if all values are floats
     if all(_is_float(v) for v in non_empty):
         return "float"
+
+    # Check if all values are booleans
+    if all(_is_boolean(v) for v in non_empty):
+        return "boolean"
 
     # Check if all values are dates
     if all(_is_date(v) for v in non_empty):
@@ -103,6 +107,42 @@ def _is_float(value: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _is_boolean(value: str) -> bool:
+    """Check if a string represents a boolean value.
+
+    Recognizes common boolean patterns:
+    - true/false, TRUE/FALSE, True/False
+    - yes/no, YES/NO, Yes/No
+    - y/n, Y/N
+    - 1/0
+    - active/inactive, ACTIVE/INACTIVE, Active/Inactive
+    - enabled/disabled, ENABLED/DISABLED, Enabled/Disabled
+    """
+    value_lower = value.strip().lower()
+
+    boolean_values = {
+        # true/false variants
+        "true",
+        "false",
+        # yes/no variants
+        "yes",
+        "no",
+        "y",
+        "n",
+        # numeric
+        "1",
+        "0",
+        # active/inactive variants
+        "active",
+        "inactive",
+        # enabled/disabled variants
+        "enabled",
+        "disabled",
+    }
+
+    return value_lower in boolean_values
 
 
 def _is_date(value: str) -> bool:

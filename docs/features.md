@@ -453,6 +453,7 @@ Automatically detects column types from CSV data.
 | INTEGER | `1`, `42`, `-100`, `2147483647` | PostgreSQL INTEGER (-2^31 to 2^31-1) |
 | BIGINT | `815230591184000000`, `9223372036854775807` | Large integers exceeding INTEGER range |
 | FLOAT | `3.14`, `-0.5`, `1.23e-4` | Floating point numbers |
+| BOOLEAN | `true`, `false`, `yes`, `no`, `y`, `n`, `active`, `inactive`, `enabled`, `disabled` | Boolean values (case-insensitive) |
 | DATE | `2024-01-15`, `2024-12-31` | Date values |
 | TEXT | `Alice`, `alice@example.com` | Text strings |
 

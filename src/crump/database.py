@@ -219,6 +219,8 @@ class PostgreSQLBackend:
             "date": "DATE",
             "datetime": "TIMESTAMP",
             "timestamp": "TIMESTAMP",
+            "boolean": "BOOLEAN",
+            "bool": "BOOLEAN",
             "text": "TEXT",
             "string": "TEXT",
         }
@@ -587,6 +589,8 @@ class SQLiteBackend:
             "date": "TEXT",
             "datetime": "TEXT",
             "timestamp": "TEXT",
+            "boolean": "INTEGER",  # SQLite uses INTEGER for boolean (0/1)
+            "bool": "INTEGER",
             "text": "TEXT",
             "string": "TEXT",
         }
@@ -1266,6 +1270,67 @@ class DatabaseConnection:
         return data_type.lower().strip() in ("date", "datetime", "timestamp")
 
     @staticmethod
+    def _is_boolean_type(data_type: str | None) -> bool:
+        """Check if the data type is a boolean type.
+
+        Args:
+            data_type: Data type string
+
+        Returns:
+            True if data_type is boolean or bool
+        """
+        if data_type is None:
+            return False
+        return data_type.lower().strip() in ("boolean", "bool")
+
+    @staticmethod
+    def _convert_to_boolean(value: Any) -> bool | None:
+        """Convert a value to a boolean.
+
+        Recognizes common boolean patterns:
+        - true/false, TRUE/FALSE, True/False → True/False
+        - yes/no, YES/NO, Yes/No, y/n, Y/N → True/False
+        - 1/0 → True/False
+        - active/inactive, ACTIVE/INACTIVE → True/False
+        - enabled/disabled, ENABLED/DISABLED → True/False
+
+        Args:
+            value: The value to convert
+
+        Returns:
+            True, False, or None if value is empty/null
+        """
+        if value is None or value == "":
+            return None
+
+        value_str = str(value).strip().lower()
+
+        true_values = {
+            "true",
+            "yes",
+            "y",
+            "1",
+            "active",
+            "enabled",
+        }
+        false_values = {
+            "false",
+            "no",
+            "n",
+            "0",
+            "inactive",
+            "disabled",
+        }
+
+        if value_str in true_values:
+            return True
+        if value_str in false_values:
+            return False
+
+        # If we reach here, it's not a recognized boolean value
+        return None
+
+    @staticmethod
     def _is_empty_datetime_value(value: Any) -> bool:
         """Check if a value represents an empty/null datetime.
 
@@ -1287,7 +1352,7 @@ class DatabaseConnection:
             data_type: The configured data type
 
         Returns:
-            0 for integer/numeric types, min datetime for date/datetime types,
+            0 for integer/numeric types, False for boolean, min datetime for date/datetime types,
             empty string for text/string types
         """
         if data_type is None:
@@ -1297,6 +1362,8 @@ class DatabaseConnection:
             return 0
         if dt_lower in ("float", "double"):
             return 0.0
+        if dt_lower in ("boolean", "bool"):
+            return False
         if dt_lower == "date":
             return DatabaseConnection._MIN_DATE
         if dt_lower in ("datetime", "timestamp"):
@@ -1405,6 +1472,42 @@ class DatabaseConnection:
                             f"from {len(str_value)} to {varchar_limit} characters",
                         )
                         row_data[db_col] = str_value[:varchar_limit]
+
+            # Convert boolean values
+            if (
+                self._is_boolean_type(col_mapping.data_type)
+                and db_col in row_data
+                and row_data[db_col] is not None
+                and row_data[db_col] != ""
+            ):
+                bool_value = self._convert_to_boolean(row_data[db_col])
+                if bool_value is None:
+                    # Invalid boolean value
+                    if failure_mode == FailureMode.STRICT:
+                        _warn(
+                            f"skip:invalid_boolean:{db_col}",
+                            f"STRICT mode: Skipping row - invalid boolean value "
+                            f"'{row_data[db_col]}' for '{db_col}'",
+                        )
+                        return None
+                    else:
+                        # PERMISSIVE: use NULL if nullable, otherwise False as default
+                        if col_mapping.nullable is not False:
+                            _warn(
+                                f"fix:invalid_boolean_null:{db_col}",
+                                f"PERMISSIVE mode: Setting '{db_col}' to NULL - "
+                                f"invalid boolean value '{row_data[db_col]}'",
+                            )
+                            row_data[db_col] = None
+                        else:
+                            _warn(
+                                f"fix:invalid_boolean_false:{db_col}",
+                                f"PERMISSIVE mode: Setting '{db_col}' to False - "
+                                f"invalid boolean value '{row_data[db_col]}'",
+                            )
+                            row_data[db_col] = False
+                else:
+                    row_data[db_col] = bool_value
 
             # Check integer range
             int_range = self._get_integer_range(col_mapping.data_type)
@@ -1534,6 +1637,21 @@ class DatabaseConnection:
                 msg = (
                     f"PERMISSIVE mode: Used minimum datetime for {count} "
                     f"{rows_word} — empty non-nullable field '{col}'"
+                )
+            elif action == "skip" and reason == "invalid_boolean":
+                msg = (
+                    f"STRICT mode: Skipped {count} {rows_word} — "
+                    f"invalid boolean value for field '{col}'"
+                )
+            elif action == "fix" and reason == "invalid_boolean_null":
+                msg = (
+                    f"PERMISSIVE mode: Set '{col}' to NULL for {count} "
+                    f"{rows_word} — invalid boolean value"
+                )
+            elif action == "fix" and reason == "invalid_boolean_false":
+                msg = (
+                    f"PERMISSIVE mode: Set '{col}' to False for {count} "
+                    f"{rows_word} — invalid boolean value"
                 )
             else:
                 msg = f"Validation: {key} ({count} {rows_word})"

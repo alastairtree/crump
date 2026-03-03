@@ -1836,3 +1836,140 @@ jobs:
         assert rows_db[0] == ("1", 18.0)  # 0.01*100 + 1.5*10 + 2 = 18
         assert rows_db[1] == ("2", 36.0)  # 0.01*400 + 1.5*20 + 2 = 36
         assert rows_db[2] == ("3", 102.0)  # 0.01*2500 + 1.5*50 + 2 = 102
+
+    def test_sync_with_boolean_columns(self, tmp_path: Path, db_url: str) -> None:
+        """Test syncing CSV with boolean columns (true/false, yes/no, etc.)."""
+        from tests.test_helpers import create_csv_file
+
+        # Create CSV with various boolean patterns
+        csv_file = tmp_path / "users_status.csv"
+        rows = [
+            {"id": "1", "active": "true", "verified": "yes", "premium": "Y"},
+            {"id": "2", "active": "false", "verified": "no", "premium": "N"},
+            {"id": "3", "active": "TRUE", "verified": "YES", "premium": "1"},
+            {"id": "4", "active": "False", "verified": "No", "premium": "0"},
+            {"id": "5", "active": "enabled", "verified": "active", "premium": "true"},
+            {"id": "6", "active": "disabled", "verified": "inactive", "premium": "false"},
+        ]
+        create_csv_file(csv_file, ["id", "active", "verified", "premium"], rows)
+
+        # Create config with boolean columns
+        config_file = tmp_path / "crump_config.yml"
+        config_file.write_text("""
+jobs:
+  user_status:
+    target_table: users_status
+    id_mapping:
+      id: id
+    columns:
+      active:
+        db_column: is_active
+        type: boolean
+      verified:
+        db_column: is_verified
+        type: boolean
+      premium:
+        db_column: is_premium
+        type: boolean
+""")
+
+        config = CrumpConfig.from_yaml(config_file)
+        job = config.get_job("user_status")
+        assert job is not None
+
+        # Sync data
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
+        assert rows_synced == 6
+
+        # Verify boolean values were correctly converted
+        rows_db = execute_query(
+            db_url, "SELECT id, is_active, is_verified, is_premium FROM users_status ORDER BY id"
+        )
+        assert len(rows_db) == 6
+
+        # Check each row (PostgreSQL returns True/False, SQLite returns 1/0)
+        # Convert to bool for consistent assertions
+        def to_bool(val):
+            return bool(val)
+
+        assert (
+            rows_db[0][0],
+            to_bool(rows_db[0][1]),
+            to_bool(rows_db[0][2]),
+            to_bool(rows_db[0][3]),
+        ) == ("1", True, True, True)
+        assert (
+            rows_db[1][0],
+            to_bool(rows_db[1][1]),
+            to_bool(rows_db[1][2]),
+            to_bool(rows_db[1][3]),
+        ) == ("2", False, False, False)
+        assert (
+            rows_db[2][0],
+            to_bool(rows_db[2][1]),
+            to_bool(rows_db[2][2]),
+            to_bool(rows_db[2][3]),
+        ) == ("3", True, True, True)
+        assert (
+            rows_db[3][0],
+            to_bool(rows_db[3][1]),
+            to_bool(rows_db[3][2]),
+            to_bool(rows_db[3][3]),
+        ) == ("4", False, False, False)
+        assert (
+            rows_db[4][0],
+            to_bool(rows_db[4][1]),
+            to_bool(rows_db[4][2]),
+            to_bool(rows_db[4][3]),
+        ) == ("5", True, True, True)
+        assert (
+            rows_db[5][0],
+            to_bool(rows_db[5][1]),
+            to_bool(rows_db[5][2]),
+            to_bool(rows_db[5][3]),
+        ) == ("6", False, False, False)
+
+    def test_sync_with_boolean_nullable(self, tmp_path: Path, db_url: str) -> None:
+        """Test syncing with nullable boolean columns."""
+        from tests.test_helpers import create_csv_file
+
+        # Create CSV with some null/empty boolean values
+        csv_file = tmp_path / "features.csv"
+        rows = [
+            {"id": "1", "enabled": "true"},
+            {"id": "2", "enabled": ""},  # Empty string
+            {"id": "3", "enabled": "false"},
+            {"id": "4", "enabled": "yes"},
+        ]
+        create_csv_file(csv_file, ["id", "enabled"], rows)
+
+        # Create config with nullable boolean
+        config_file = tmp_path / "crump_config.yml"
+        config_file.write_text("""
+jobs:
+  features:
+    target_table: features
+    id_mapping:
+      id: id
+    columns:
+      enabled:
+        db_column: is_enabled
+        type: boolean
+        nullable: true
+""")
+
+        config = CrumpConfig.from_yaml(config_file)
+        job = config.get_job("features")
+        assert job is not None
+
+        # Sync data
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
+        assert rows_synced == 4
+
+        # Verify nullable boolean handling
+        rows_db = execute_query(db_url, "SELECT id, is_enabled FROM features ORDER BY id")
+        assert len(rows_db) == 4
+        assert rows_db[0][1] is True or rows_db[0][1] == 1
+        assert rows_db[1][1] is None  # Empty string becomes NULL
+        assert rows_db[2][1] is False or rows_db[2][1] == 0
+        assert rows_db[3][1] is True or rows_db[3][1] == 1

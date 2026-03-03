@@ -235,6 +235,48 @@ class TestPrepareCommandIntegration:
         assert epoch_column is not None, "epoch column not found in job config"
         assert epoch_column.data_type == "bigint", f"Expected bigint, got {epoch_column.data_type}"
 
+    def test_prepare_detects_boolean_type(self, tmp_path: Path) -> None:
+        """Test that prepare command detects boolean data type for boolean columns."""
+        from click.testing import CliRunner
+
+        from crump.cli_prepare import prepare
+        from crump.config import CrumpConfig
+
+        # Create CSV with boolean columns
+        csv_file = tmp_path / "user_status.csv"
+        csv_file.write_text(
+            "id,active,verified,premium\n"
+            "1,true,yes,enabled\n"
+            "2,false,no,disabled\n"
+            "3,TRUE,YES,ENABLED\n"
+            "4,False,No,Disabled\n"
+        )
+
+        config_file = tmp_path / "crump_config.yml"
+        runner = CliRunner()
+
+        result = runner.invoke(prepare, [str(csv_file), "--config", str(config_file)])
+
+        assert result.exit_code == 0
+        assert config_file.exists()
+
+        # Load config and verify boolean types were detected
+        config = CrumpConfig.from_yaml(config_file)
+        job = config.jobs["user_status"]
+
+        # Check that boolean columns have boolean type
+        boolean_columns = ["active", "verified", "premium"]
+        for bool_col in boolean_columns:
+            column = None
+            for col in job.columns or []:
+                if col.csv_column == bool_col:
+                    column = col
+                    break
+            assert column is not None, f"{bool_col} column not found in job config"
+            assert column.data_type == "boolean", (
+                f"Expected boolean for {bool_col}, got {column.data_type}"
+            )
+
 
 class TestDetectFilenamePatterns:
     """Tests for the detect_filename_patterns function."""

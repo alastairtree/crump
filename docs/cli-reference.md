@@ -173,7 +173,7 @@ crump prepare FILE_PATH... CONFIG [JOB] [OPTIONS]
 #### Behavior
 
 1. **Analyzes CSV file**:
-   - Detects column types (integer, float, text, date, etc.)
+   - Detects column types (integer, bigint, float, boolean, date, datetime, text, etc.)
    - Identifies nullable columns
    - Suggests an ID column
 
