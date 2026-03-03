@@ -610,6 +610,54 @@ class TestExtractCDFToTempCSV:
             assert len(lines) <= 11
 
 
+class TestFilenameMatchPreservation:
+    """Tests for ensuring filename_match is preserved when adding new jobs to config."""
+
+    def test_filename_match_preserved_when_adding_new_job(self, tmp_path: Path) -> None:
+        """Test that filename_match is preserved when adding a new job to existing config."""
+        from click.testing import CliRunner
+
+        from crump.cli_prepare import prepare
+        from crump.config import CrumpConfig
+
+        # Create initial config with filename_match
+        config_file = tmp_path / "crump_config.yml"
+        config_file.write_text("""
+jobs:
+  job1:
+    target_table: table1
+    filename_match: "magic_data_*_v*.csv"
+    id_mapping:
+      id: db_id
+    columns:
+      name: db_name
+""")
+
+        # Verify initial config has filename_match
+        config = CrumpConfig.from_yaml(config_file)
+        assert config.jobs["job1"].filename_match == "magic_data_*_v*.csv"
+
+        # Create a second CSV file to add to config
+        csv_file = tmp_path / "other_data.csv"
+        csv_file.write_text("id,value\n1,100\n2,200\n")
+
+        # Run prepare to add a new job
+        runner = CliRunner()
+        result = runner.invoke(prepare, [str(csv_file), "--config", str(config_file)])
+
+        assert result.exit_code == 0, f"Prepare failed: {result.output}"
+
+        # Load config and verify filename_match was preserved for job1
+        config = CrumpConfig.from_yaml(config_file)
+        assert "job1" in config.jobs, "job1 should still exist in config"
+        assert config.jobs["job1"].filename_match == "magic_data_*_v*.csv", (
+            "filename_match should be preserved for job1"
+        )
+
+        # Verify new job was added
+        assert "other_data" in config.jobs, "new job should be added"
+
+
 class TestCDFEndToEndWorkflow:
     """End-to-end tests for the complete CDF workflow: prepare -> extract -> sync."""
 

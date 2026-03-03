@@ -140,3 +140,19 @@ jobs:
 - **cdflib**: CDF file reading
 - **testcontainers**: Integration testing with real databases
 - **pyarrow**: Parquet file support
+
+## Versioning
+
+Project version is stored in `pyproject.toml` at the `version` field. Follow semantic versioning (semver):
+
+- **Major version (X.0.0)**: Breaking changes, incompatible API changes
+- **Minor version (0.X.0)**: New features, backwards-compatible functionality additions
+- **Patch version (0.0.X)**: Bug fixes, backwards-compatible bug fixes
+
+When making changes:
+
+- **Bug fixes**: Increment patch version (e.g., 0.6.0 → 0.6.1)
+- **New features**: Increment minor version (e.g., 0.6.0 → 0.7.0)
+- **Breaking changes**: Increment major version (e.g., 0.6.0 → 1.0.0)
+
+Always update the version number in `pyproject.toml` when making changes that will be released.

@@ -25,6 +25,7 @@ Each job has the following fields:
 | `target_table` | string | Yes | Name of the database table |
 | `id_mapping` | dict | Yes | Mapping for primary key column(s) |
 | `columns` | dict | No | Column mappings (CSV → DB). If omitted, syncs all columns |
+| `filename_match` | string | No | Glob or regex pattern to automatically select this job based on filename |
 | `filename_to_column` | object | No | Extract values from filename to database columns |
 | `indexes` | list | No | Database indexes to create |
 | `sample_percentage` | float | No | Percentage of rows to sync (0-100). If omitted or 100, syncs all rows |
@@ -363,6 +364,63 @@ def celsius_to_fahrenheit(celsius: str) -> float:
 - Only use functions from trusted modules
 - Validate and sanitize function logic before deployment
 
+### Automatic Job Selection
+
+When a configuration file contains multiple jobs, crump can automatically select which job to use based on the filename being synced. This is controlled by the `filename_match` field.
+
+#### How It Works
+
+If you don't specify a `--job` option when running `crump sync`, crump will:
+
+1. Check if there's only one job in the config (auto-select it)
+2. If there are multiple jobs, try to match the filename against each job's `filename_match` pattern
+3. Use the first job that matches
+
+- If no jobs match the filename, crump will display an error asking you to specify `--job` explicitly
+- If multiple jobs match the same filename, the first matching job is used
+- You can always override automatic selection by providing `--job` explicitly
+
+#### Pattern Matching
+
+The `filename_match` field supports three types of patterns:
+
+**1. Glob Patterns (recommended for simplicity)**
+
+```yaml
+jobs:
+  daily_sales:
+    target_table: sales
+    filename_match: "sales_*_v*.csv"
+    id_mapping:
+      sale_id: id
+```
+
+Matches files like:
+- `sales_2024-01-15_v1.csv`
+- `sales_2024-12-31_v2.csv`
+- `/path/to/sales_anything_v123.csv`
+
+**2. Regex Patterns**
+
+```yaml
+jobs:
+  sensor_data:
+    target_table: sensor_readings
+    filename_match: "sensor_[0-9]{4}_data\\.csv$"
+    id_mapping:
+      reading_id: id
+```
+
+Matches files like:
+- `sensor_1234_data.csv`
+- `sensor_9999_data.csv`
+
+**3. Full Path Matching**
+
+Both glob and regex patterns can match against:
+- The full file path (e.g., `/data/2024/sales_jan.csv`)
+- Just the filename (e.g., `sales_jan.csv`)
+
 ### Filename to Column
 
 Extract values from filenames and store them in database columns:
@@ -683,6 +741,7 @@ jobs:
   # Daily sales with date extraction and cleanup
   daily_sales:
     target_table: sales
+    filename_match: "sales_*.csv"
     id_mapping:
       sale_id: id
     filename_to_column:
@@ -726,6 +785,7 @@ jobs:
   # Science data with complex filename pattern
   observation_data:
     target_table: observations
+    filename_match: "*_level2_*_*.cdf"
     id_mapping:
       obs_id: id
     filename_to_column:
