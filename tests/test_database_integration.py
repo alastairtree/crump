@@ -1450,6 +1450,57 @@ jobs:
         assert rows_db[1] == ("2", 2, 1)  # shipped -> 2, low -> 1
         assert rows_db[2] == ("3", 3, 2)  # delivered -> 3, medium -> 2
 
+    def test_sync_with_lookup_boolean_strings_to_int(self, tmp_path: Path, db_url: str) -> None:
+        """Test syncing with lookup mapping boolean-like strings (True/False) to integers."""
+        from tests.test_helpers import create_csv_file
+
+        # Create CSV with boolean-like string values
+        csv_file = tmp_path / "activity.csv"
+        rows = [
+            {"activity_id": "1", "name": "Task A", "is_active": "True"},
+            {"activity_id": "2", "name": "Task B", "is_active": "False"},
+            {"activity_id": "3", "name": "Task C", "is_active": "UNKNOWN"},
+            {"activity_id": "4", "name": "Task D", "is_active": "True"},
+        ]
+        create_csv_file(csv_file, ["activity_id", "name", "is_active"], rows)
+
+        # Create config with lookup mapping boolean strings to integers
+        config_file = tmp_path / "crump_config.yml"
+        config_file.write_text("""
+jobs:
+  test_lookup:
+    target_table: activity_lookup
+    id_mapping:
+      activity_id: id
+    columns:
+      name: task_name
+      is_active:
+        db_column: active_status
+        type: integer
+        lookup:
+          True: 1
+          False: 0
+          UNKNOWN: -1
+""")
+
+        config = CrumpConfig.from_yaml(config_file)
+        job = config.get_job("test_lookup")
+        assert job is not None
+
+        # Sync with lookup
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
+        assert rows_synced == 4
+
+        # Verify data was transformed from boolean-like strings to integers
+        rows_db = execute_query(
+            db_url, "SELECT id, task_name, active_status FROM activity_lookup ORDER BY id"
+        )
+        assert len(rows_db) == 4
+        assert rows_db[0] == ("1", "Task A", 1)  # "True" -> 1
+        assert rows_db[1] == ("2", "Task B", 0)  # "False" -> 0
+        assert rows_db[2] == ("3", "Task C", -1)  # "UNKNOWN" -> -1
+        assert rows_db[3] == ("4", "Task D", 1)  # "True" -> 1
+
 
 class TestCustomFunctions:
     """Integration tests for custom function column mappings."""
