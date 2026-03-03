@@ -1026,7 +1026,25 @@ def apply_row_transformations(
         elif col_mapping.csv_column and col_mapping.csv_column in row:
             csv_value = row[col_mapping.csv_column]
             # Apply lookup transformation if configured
-            row_data[col_mapping.db_column] = col_mapping.apply_lookup(csv_value)
+            transformed_value = col_mapping.apply_lookup(csv_value)
+
+            # Apply boolean conversion if the column is boolean type
+            if col_mapping.data_type and col_mapping.data_type.lower() in ("boolean", "bool"):
+                # Empty strings should be None for nullable columns
+                if transformed_value == "" or transformed_value is None:
+                    row_data[col_mapping.db_column] = None
+                else:
+                    # Convert string boolean values to actual boolean
+                    from crump.database import DatabaseConnection
+
+                    bool_val = DatabaseConnection._convert_to_boolean(transformed_value)
+                    if bool_val is not None:
+                        row_data[col_mapping.db_column] = bool_val
+                    else:
+                        # Leave as-is for validation to handle
+                        row_data[col_mapping.db_column] = transformed_value
+            else:
+                row_data[col_mapping.db_column] = transformed_value
         elif col_mapping.csv_column and col_mapping.csv_column not in row:
             # CSV column is missing from this row - mark as None for validation
             row_data[col_mapping.db_column] = None

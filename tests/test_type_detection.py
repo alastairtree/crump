@@ -112,6 +112,54 @@ class TestDetectColumnType:
         values = ["1", "2.5", "3", "4.7"]
         assert detect_column_type(values) == "float"
 
+    def test_detect_boolean_true_false(self) -> None:
+        """Test detection of true/false boolean values."""
+        values = ["true", "false", "TRUE", "FALSE", "True", "False"]
+        assert detect_column_type(values) == "boolean"
+
+    def test_detect_boolean_yes_no(self) -> None:
+        """Test detection of yes/no boolean values."""
+        values = ["yes", "no", "YES", "NO", "Yes", "No"]
+        assert detect_column_type(values) == "boolean"
+
+    def test_detect_boolean_y_n(self) -> None:
+        """Test detection of y/n boolean values."""
+        values = ["y", "n", "Y", "N"]
+        assert detect_column_type(values) == "boolean"
+
+    def test_detect_boolean_one_zero(self) -> None:
+        """Test detection of 1/0 boolean values."""
+        values = ["1", "0", "1", "0"]
+        # Note: This will be detected as integer, not boolean
+        # because integers are checked before booleans
+        assert detect_column_type(values) == "integer"
+
+    def test_detect_boolean_active_inactive(self) -> None:
+        """Test detection of active/inactive boolean values."""
+        values = ["active", "inactive", "ACTIVE", "INACTIVE", "Active", "Inactive"]
+        assert detect_column_type(values) == "boolean"
+
+    def test_detect_boolean_enabled_disabled(self) -> None:
+        """Test detection of enabled/disabled boolean values."""
+        values = ["enabled", "disabled", "ENABLED", "DISABLED", "Enabled", "Disabled"]
+        assert detect_column_type(values) == "boolean"
+
+    def test_detect_boolean_mixed_patterns(self) -> None:
+        """Test detection with mixed boolean patterns."""
+        values = ["true", "false", "yes", "no"]
+        assert detect_column_type(values) == "boolean"
+
+    def test_detect_boolean_with_whitespace(self) -> None:
+        """Test detection of boolean values with whitespace."""
+        values = ["  true  ", "false  ", "  yes", "no  "]
+        assert detect_column_type(values) == "boolean"
+
+    def test_boolean_not_detected_with_invalid_values(self) -> None:
+        """Test that boolean is not detected when mixed with invalid values."""
+        values = ["true", "false", "maybe"]
+        result = detect_column_type(values)
+        assert result.startswith("varchar(") or result == "text"
+
 
 class TestSuggestIdColumn:
     """Test suite for suggest_id_column function."""
