@@ -218,7 +218,10 @@ class TestInspectCDFFiles:
         # It may be wrapped but should contain all parts
         # The URL may be split mid-word so check for parts that won't be split
         assert "imperial.ac.uk" in result.output
-        assert "/research/missions-and-projects" in result.output or "missions-and-projects" in result.output
+        assert (
+            "/research/missions-and-projects" in result.output
+            or "missions-and-projects" in result.output
+        )
         assert "solar-orbiter" in result.output
 
     def test_inspect_cdf_global_attributes_arrays_not_truncated(
