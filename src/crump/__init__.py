@@ -21,7 +21,13 @@ Programmatic Usage:
     )
 """
 
-__version__ = "0.5.2"
+from importlib.metadata import version
+
+try:
+    __version__ = version("crump")
+except Exception:
+    # Fallback version if package metadata is not available (e.g., during development)
+    __version__ = "0.0.0.dev"
 
 # Export main API functions
 from crump.config import (
