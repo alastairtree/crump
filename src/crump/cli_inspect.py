@@ -134,14 +134,12 @@ def _format_attribute_value(attr_values: object) -> str:
     if isinstance(attr_values, list) and len(attr_values) == 1:
         value_str = str(attr_values[0])
     elif isinstance(attr_values, list) and len(attr_values) > 1:
-        value_str = f"{attr_values[0]} (+ {len(attr_values) - 1} more)"
+        # Show all items in the list, joined by ", "
+        value_str = ", ".join(str(item) for item in attr_values)
     else:
         value_str = str(attr_values)
 
-    # Truncate long values
-    if len(value_str) > MAX_VALUE_LENGTH:
-        value_str = value_str[: MAX_VALUE_LENGTH - 3] + "..."
-
+    # No truncation - show full value
     return value_str
 
 
@@ -209,7 +207,7 @@ def inspect_cdf(file_path: Path, num_records: int) -> None:
             global_attrs = cdf.globalattsget()
             attr_table = Table(show_header=True, box=None, padding=(0, 1))
             attr_table.add_column("Attribute", style="yellow")
-            attr_table.add_column("Value", style="dim")
+            attr_table.add_column("Value", style="dim", overflow="fold")
 
             for attr_name, attr_values in sorted(global_attrs.items()):
                 value_str = _format_attribute_value(attr_values)
