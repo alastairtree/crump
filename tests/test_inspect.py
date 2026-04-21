@@ -196,6 +196,64 @@ class TestInspectCDFFiles:
             # EPOCH (1440 records) should appear before LBL1_B_RTN (3 records)
             assert epoch_index < lbl_index
 
+    def test_inspect_cdf_global_attributes_not_truncated(self, cli_runner: CliRunner) -> None:
+        """Test that global attributes are displayed in full without truncation."""
+        cdf_file = Path("tests/data/solo_L2_mag-rtn-normal-1-minute-internal_20241225_V00.cdf")
+        if not cdf_file.exists():
+            pytest.skip("CDF test file not found")
+
+        result = cli_runner.invoke(main, ["inspect", str(cdf_file)])
+        assert result.exit_code == 0
+
+        # Check that long string attributes are not truncated with "..."
+        # Acknowledgement is 107 characters, should appear in full (may be wrapped but not truncated)
+        assert "Solar Orbiter magnetometer data was provided by" in result.output
+        assert "Imperial College Londonand supported by the UK" in result.output
+        assert "Space Agency" in result.output
+        # Should NOT have the truncation marker
+        assert "Imperial College Londonand su..." not in result.output
+        assert "Acknowledgement" in result.output
+
+        # Check that long HTTP_LINK is not truncated (117 characters)
+        # It may be wrapped but should contain all parts
+        # The URL may be split mid-word so check for parts that won't be split
+        assert "imperial.ac.uk" in result.output
+        assert (
+            "/research/missions-and-projects" in result.output
+            or "missions-and-projects" in result.output
+        )
+        assert "solar-orbiter" in result.output
+
+    def test_inspect_cdf_global_attributes_arrays_not_truncated(
+        self, cli_runner: CliRunner
+    ) -> None:
+        """Test that array-type global attributes show all elements, not just first + count."""
+        cdf_file = Path("tests/data/solo_L2_mag-rtn-normal-1-minute-internal_20241225_V00.cdf")
+        if not cdf_file.exists():
+            pytest.skip("CDF test file not found")
+
+        result = cli_runner.invoke(main, ["inspect", str(cdf_file)])
+        assert result.exit_code == 0
+
+        # Check that MODS array (11 items) shows all items, not just first + count
+        # Should NOT have truncation like "V01 2019/12/11 I. Carrasco: Initial release (+ 10 more)"
+        assert "(+ 10 more)" not in result.output
+        # Should show multiple version entries (may be wrapped across lines)
+        assert "V01 2019/12/11 I. Carrasco: Initial release" in result.output
+        assert "I. Carrasco: Second release" in result.output
+        assert "H. O'Brien: Third release" in result.output
+
+        # Check that Parents array (9 items) shows all items
+        assert "(+ 8 more)" not in result.output
+        # Should show multiple parent files
+        assert "solo_ANC_soc-flown-mk" in result.output
+        assert "compressed packets" in result.output
+
+        # Check that TEXT array (2 items) shows all items
+        assert "(+ 1 more)" not in result.output
+        assert "Dual-sensor, triaxial fluxgate magnetometer" in result.output
+        assert "doi:10.1051/0004-6361/201937257" in result.output
+
 
 class TestInspectParquetFiles:
     """Test suite for inspecting Parquet files."""
