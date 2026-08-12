@@ -50,6 +50,21 @@ class OutputFileType(Enum):
         return cls.from_extension(Path(path).suffix)
 
 
+class ParquetCompression(Enum):
+    """Compression algorithms supported for Parquet file output."""
+
+    SNAPPY = "snappy"
+    GZIP = "gzip"
+    BROTLI = "brotli"
+    ZSTD = "zstd"
+    LZ4 = "lz4"
+    NONE = "none"
+
+    def to_pyarrow(self) -> str | None:
+        """Return the compression value expected by pyarrow; NONE maps to None."""
+        return None if self is ParquetCompression.NONE else self.value
+
+
 class InputFileType(Enum):
     """Supported input file formats for data processing."""
 

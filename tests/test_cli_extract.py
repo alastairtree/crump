@@ -710,3 +710,157 @@ jobs:
             first_row = next(reader)
             assert first_row.get("file_date") == "20251010"
             assert first_row.get("file_version") == "001"
+
+
+class TestExtractParquetCompression:
+    """Tests for --compression option on extract command."""
+
+    @pytest.mark.parametrize("compression", ["snappy", "gzip", "brotli", "zstd", "lz4", "none"])
+    def test_extract_raw_parquet_all_compression_algorithms(
+        self,
+        cli_runner: CliRunner,
+        solo_cdf_file: Path,
+        tmp_path: Path,
+        compression: str,
+    ) -> None:
+        """Every supported compression algorithm should produce a valid parquet file."""
+        import pyarrow.parquet as pq
+
+        output_dir = tmp_path / "out"
+        output_dir.mkdir()
+
+        result = cli_runner.invoke(
+            extract,
+            [
+                str(solo_cdf_file),
+                "--parquet",
+                "--compression",
+                compression,
+                "--output-path",
+                str(output_dir),
+            ],
+        )
+
+        assert result.exit_code == 0, (
+            f"Extract failed with compression={compression}: {result.output}"
+        )
+        parquet_files = list(output_dir.glob("*.parquet"))
+        assert len(parquet_files) > 0, f"No parquet files created with compression={compression}"
+
+        # Verify the file is a valid parquet file readable by pyarrow
+        for pf in parquet_files:
+            table = pq.read_table(str(pf))
+            assert table.num_rows > 0
+
+    @pytest.mark.parametrize("compression", ["snappy", "gzip", "zstd", "none"])
+    def test_extract_with_config_parquet_compression(
+        self,
+        cli_runner: CliRunner,
+        solo_cdf_file: Path,
+        tmp_path: Path,
+        compression: str,
+    ) -> None:
+        """Compression option works with config-based extraction."""
+        import pyarrow.parquet as pq
+
+        output_dir = tmp_path / "out"
+        output_dir.mkdir()
+
+        config_content = """
+jobs:
+  test_job:
+    target_table: test_table
+    id_mapping:
+      EPOCH: id
+    columns:
+      B_RTN_0: b_r
+"""
+        config_file = tmp_path / "config.yml"
+        config_file.write_text(config_content)
+
+        result = cli_runner.invoke(
+            extract,
+            [
+                str(solo_cdf_file),
+                "--parquet",
+                "--compression",
+                compression,
+                "--output-path",
+                str(output_dir),
+                "--config",
+                str(config_file),
+            ],
+        )
+
+        assert result.exit_code == 0, (
+            f"Extract failed with compression={compression}: {result.output}"
+        )
+        parquet_files = list(output_dir.glob("*.parquet"))
+        assert len(parquet_files) > 0
+
+        for pf in parquet_files:
+            table = pq.read_table(str(pf))
+            assert table.num_rows > 0
+
+    def test_extract_compression_without_parquet_errors(
+        self,
+        cli_runner: CliRunner,
+        solo_cdf_file: Path,
+        tmp_path: Path,
+    ) -> None:
+        """Using --compression without --parquet should exit with an error."""
+        result = cli_runner.invoke(
+            extract,
+            [
+                str(solo_cdf_file),
+                "--compression",
+                "zstd",
+                "--output-path",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "compression" in result.output.lower() or "parquet" in result.output.lower()
+
+    def test_extract_compression_shown_in_output(
+        self,
+        cli_runner: CliRunner,
+        solo_cdf_file: Path,
+        tmp_path: Path,
+    ) -> None:
+        """Compression algorithm is displayed in console output."""
+        result = cli_runner.invoke(
+            extract,
+            [
+                str(solo_cdf_file),
+                "--parquet",
+                "--compression",
+                "gzip",
+                "--output-path",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "gzip" in result.output
+
+    def test_extract_parquet_default_compression_is_zstd(
+        self,
+        cli_runner: CliRunner,
+        solo_cdf_file: Path,
+        tmp_path: Path,
+    ) -> None:
+        """When --parquet is given without --compression, zstd is the default."""
+        result = cli_runner.invoke(
+            extract,
+            [
+                str(solo_cdf_file),
+                "--parquet",
+                "--output-path",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "zstd" in result.output

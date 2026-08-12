@@ -12,6 +12,7 @@ import numpy as np
 
 from crump.cdf_reader import CDFVariable, get_column_names_for_variable, read_cdf_variables
 from crump.config import CrumpJob, apply_row_transformations
+from crump.file_types import ParquetCompression
 from crump.tabular_file import create_writer
 
 
@@ -203,6 +204,7 @@ def extract_cdf_to_tabular_file(
     variable_names: list[str] | None = None,
     max_records: int | None = None,
     use_parquet: bool = False,  # noqa: ARG001  # Deprecated parameter kept for compatibility
+    parquet_compression: ParquetCompression = ParquetCompression.ZSTD,
 ) -> list[ExtractionResult]:
     """Extract data from a CDF file to CSV or Parquet files.
 
@@ -218,6 +220,7 @@ def extract_cdf_to_tabular_file(
         variable_names: List of specific variables to extract (None = all)
         max_records: Maximum number of records to extract per variable (None = all)
         use_parquet: Deprecated. Use filename extension instead.
+        parquet_compression: Compression algorithm for Parquet output (ignored for CSV).
 
     Returns:
         List of ExtractionResult objects
@@ -320,7 +323,9 @@ def extract_cdf_to_tabular_file(
             # Write to file using tabular writer (format auto-detected from extension)
             write_append = append and output_path.exists()
 
-            with create_writer(output_path, append=write_append) as writer:
+            with create_writer(
+                output_path, append=write_append, compression=parquet_compression
+            ) as writer:
                 # Write header only if not appending
                 if not write_append:
                     writer.writerow(all_column_names)
@@ -383,7 +388,9 @@ def extract_cdf_to_tabular_file(
             # Write to file using tabular writer (format auto-detected from extension)
             write_append = append and output_path.exists()
 
-            with create_writer(output_path, append=write_append) as writer:
+            with create_writer(
+                output_path, append=write_append, compression=parquet_compression
+            ) as writer:
                 # Write header only if not appending
                 if not write_append:
                     writer.writerow(col_names)
@@ -418,6 +425,7 @@ def extract_cdf_with_config(
     append: bool = False,
     filename_template: str = "[SOURCE_FILE]_[VARIABLE_NAME].csv",
     use_parquet: bool = False,
+    parquet_compression: ParquetCompression = ParquetCompression.ZSTD,
 ) -> list[ExtractionResult]:
     """Extract data from a CDF file to CSV/Parquet using job configuration for column selection and mapping.
 
@@ -437,6 +445,7 @@ def extract_cdf_with_config(
         variable_names: Specific variable names to extract (None = all)
         append: Whether to append to existing CSV files instead of overwriting
         filename_template: Template for output filenames (use [SOURCE_FILE] and [VARIABLE_NAME])
+        parquet_compression: Compression algorithm for Parquet output (ignored for CSV).
 
     Returns:
         List of ExtractionResult objects for successfully transformed CSVs (may be empty)
@@ -485,6 +494,7 @@ def extract_cdf_with_config(
                     append=append,
                     filename_template=filename_template,
                     use_parquet=use_parquet,
+                    parquet_compression=parquet_compression,
                 )
 
                 if result:
@@ -518,6 +528,7 @@ def _transform_tabular_file_with_config(
     append: bool = False,
     filename_template: str = "[SOURCE_FILE]_[VARIABLE_NAME].csv",
     use_parquet: bool = False,  # noqa: ARG001  # Deprecated parameter kept for compatibility
+    parquet_compression: ParquetCompression = ParquetCompression.ZSTD,
 ) -> ExtractionResult | None:
     """Transform a raw tabular file using job configuration.
 
@@ -533,6 +544,7 @@ def _transform_tabular_file_with_config(
         append: Whether to append to existing file
         filename_template: Template for output filename (extension determines format)
         use_parquet: Deprecated. Use filename extension instead.
+        parquet_compression: Compression algorithm for Parquet output (ignored for CSV).
 
     Returns:
         ExtractionResult if transformation succeeds, None if file doesn't match mappings
@@ -649,7 +661,9 @@ def _transform_tabular_file_with_config(
 
         # Write using tabular file writer (format auto-detected from extension)
         write_append = append and output_path.exists()
-        with create_writer(output_path, append=write_append) as writer:
+        with create_writer(
+            output_path, append=write_append, compression=parquet_compression
+        ) as writer:
             # Write header only if not appending
             if not write_append:
                 writer.writerow(output_columns)

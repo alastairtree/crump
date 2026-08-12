@@ -14,6 +14,7 @@ except ImportError as e:
         "pyarrow is required for Parquet file support. Install it with: pip install pyarrow"
     ) from e
 
+from .file_types import ParquetCompression
 from .tabular_file import TabularFileReader, TabularFileWriter
 
 
@@ -99,12 +100,18 @@ class ParquetFileWriter(TabularFileWriter):
     and writes them all at once when the context manager exits.
     """
 
-    def __init__(self, file_path: str | Path, append: bool = False):
+    def __init__(
+        self,
+        file_path: str | Path,
+        append: bool = False,
+        compression: ParquetCompression = ParquetCompression.ZSTD,
+    ):
         """Initialize Parquet file writer.
 
         Args:
             file_path: Path to the Parquet file
             append: If True, append to existing file. If False, overwrite.
+            compression: Compression algorithm to use when writing.
 
         Note:
             Append mode for Parquet files works by reading the existing file,
@@ -112,6 +119,7 @@ class ParquetFileWriter(TabularFileWriter):
             efficient than CSV append but maintains Parquet's columnar format.
         """
         super().__init__(file_path, append)
+        self._compression = compression
         self._rows: list[list[Any]] = []
         self._header: list[Any] | None = None
         self._existing_table: Any = None
@@ -225,9 +233,11 @@ class ParquetFileWriter(TabularFileWriter):
 
         # If appending, combine with existing table
         if self._existing_table is not None:
-            # Combine tables
             combined_table = pa.concat_tables([self._existing_table, new_table])
-            pq.write_table(combined_table, str(self.file_path))
+            pq.write_table(
+                combined_table, str(self.file_path), compression=self._compression.to_pyarrow()
+            )
         else:
-            # Write new table
-            pq.write_table(new_table, str(self.file_path))
+            pq.write_table(
+                new_table, str(self.file_path), compression=self._compression.to_pyarrow()
+            )

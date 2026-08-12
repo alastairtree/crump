@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from .file_types import InputFileType, OutputFileType
+from .file_types import InputFileType, OutputFileType, ParquetCompression
 
 
 class TabularFileReader(ABC):
@@ -175,7 +175,10 @@ def create_reader(
 
 
 def create_writer(
-    file_path: str | Path, file_format: OutputFileType | str | None = None, append: bool = False
+    file_path: str | Path,
+    file_format: OutputFileType | str | None = None,
+    append: bool = False,
+    compression: ParquetCompression = ParquetCompression.ZSTD,
 ) -> TabularFileWriter:
     """Factory function to create appropriate writer based on file format.
 
@@ -184,6 +187,7 @@ def create_writer(
         file_format: File format (OutputFileType enum, 'csv', or 'parquet').
             If None, auto-detect from extension.
         append: If True, append to existing file. If False, overwrite.
+        compression: Parquet compression algorithm (ignored for CSV).
 
     Returns:
         TabularFileWriter instance for the file format
@@ -215,6 +219,6 @@ def create_writer(
     if format_enum == OutputFileType.CSV:
         return CsvFileWriter(path, append=append)
     elif format_enum == OutputFileType.PARQUET:
-        return ParquetFileWriter(path, append=append)
+        return ParquetFileWriter(path, append=append, compression=compression)
     else:
         raise ValueError(f"Unsupported file format: {format_enum.value}")
