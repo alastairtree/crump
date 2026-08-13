@@ -358,6 +358,7 @@ crump extract FILES... [OPTIONS]
 | `--output-path`, `-o` | Path | Current directory | Output directory for files |
 | `--filename` | String | `[SOURCE_FILE]-[VARIABLE_NAME].csv` | Template for output filenames (extension determines format) |
 | `--parquet` | Flag | False | Output to Parquet format instead of CSV |
+| `--compression` | Choice | `zstd` | Parquet compression algorithm. Only valid with `--parquet`. Choices: `snappy`, `gzip`, `brotli`, `zstd`, `lz4`, `none`. |
 | `--automerge` | Flag | True | Merge variables with same record count (raw mode only) |
 | `--no-automerge` | Flag | - | Create separate file for each variable (raw mode only) |
 | `--append` | Flag | False | Append to existing files (raw mode only) |
@@ -404,6 +405,19 @@ crump extract data.cdf --no-automerge
 
 ```bash
 crump extract data.cdf --parquet
+```
+
+**Extract to Parquet with a specific compression algorithm:**
+
+```bash
+# zstd is the default — recommended for CDF scientific float/time-series data
+crump extract data.cdf --parquet --compression zstd
+
+# Use snappy for maximum read speed at the cost of compression ratio
+crump extract data.cdf --parquet --compression snappy
+
+# Disable compression entirely
+crump extract data.cdf --parquet --compression none
 ```
 
 **Extract to Parquet using filename extension:**

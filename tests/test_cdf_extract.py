@@ -816,3 +816,69 @@ def test_extract_parquet_append_mode(solo_cdf_file: Path, tmp_path: Path) -> Non
     with create_reader(output_file) as reader:
         rows = list(reader)
         assert len(rows) == original_rows * 2
+
+
+def test_extract_cdf_to_parquet_data_fidelity(solo_cdf_file: Path, tmp_path: Path) -> None:
+    """All records written to parquet (default compression) must exactly match source CDF data.
+
+    Extracts the same CDF to both CSV (reference) and parquet (default ZSTD compression),
+    then reads both back and asserts identical column names, identical row counts, and
+    identical values for every record and every column.
+    """
+    from crump.tabular_file import create_reader
+
+    csv_dir = tmp_path / "csv"
+    pq_dir = tmp_path / "pq"
+    csv_dir.mkdir()
+    pq_dir.mkdir()
+
+    csv_results = extract_cdf_to_tabular_file(
+        cdf_file_path=solo_cdf_file,
+        output_dir=csv_dir,
+        filename_template="[SOURCE_FILE]-[VARIABLE_NAME].csv",
+        automerge=True,
+        append=False,
+        variable_names=None,
+        max_records=None,
+    )
+
+    pq_results = extract_cdf_to_tabular_file(
+        cdf_file_path=solo_cdf_file,
+        output_dir=pq_dir,
+        filename_template="[SOURCE_FILE]-[VARIABLE_NAME].parquet",
+        automerge=True,
+        append=False,
+        variable_names=None,
+        max_records=None,
+        # parquet_compression not passed → uses default ParquetCompression.ZSTD
+    )
+
+    assert len(pq_results) > 0, "No parquet files were produced"
+    assert len(pq_results) == len(csv_results), (
+        f"Different number of output files: parquet={len(pq_results)}, csv={len(csv_results)}"
+    )
+
+    for csv_result, pq_result in zip(csv_results, pq_results, strict=True):
+        with create_reader(csv_result.output_file) as csv_reader:
+            csv_fieldnames = csv_reader.fieldnames
+            csv_rows = list(csv_reader)
+
+        with create_reader(pq_result.output_file) as pq_reader:
+            assert pq_reader.fieldnames == csv_fieldnames, (
+                f"Column mismatch for {pq_result.output_file.name}: "
+                f"parquet={pq_reader.fieldnames}, csv={csv_fieldnames}"
+            )
+            pq_rows = list(pq_reader)
+
+        assert len(pq_rows) == len(csv_rows), (
+            f"Row count mismatch for {pq_result.output_file.name}: "
+            f"parquet={len(pq_rows)}, csv={len(csv_rows)}"
+        )
+
+        for row_idx, (pq_row, csv_row) in enumerate(zip(pq_rows, csv_rows, strict=True)):
+            for col in csv_fieldnames:
+                assert str(pq_row[col]) == str(csv_row[col]), (
+                    f"Value mismatch at row {row_idx}, col {col!r} "
+                    f"in {pq_result.output_file.name}: "
+                    f"parquet={pq_row[col]!r}, csv={csv_row[col]!r}"
+                )

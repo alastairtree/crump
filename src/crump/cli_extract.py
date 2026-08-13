@@ -11,6 +11,7 @@ from rich.table import Table
 from crump.cdf_extractor import extract_cdf_to_tabular_file, extract_cdf_with_config
 from crump.config import CrumpConfig
 from crump.console_utils import CHECKMARK
+from crump.file_types import ParquetCompression
 
 console = Console()
 
@@ -90,6 +91,16 @@ def format_file_size(size_bytes: int) -> str:
     default=False,
     help="Output to Parquet format instead of CSV (default: disabled)",
 )
+@click.option(
+    "--compression",
+    type=click.Choice([c.value for c in ParquetCompression]),
+    default=None,
+    help=(
+        "Parquet compression algorithm. Only valid with --parquet. "
+        "Default: zstd (recommended for CDF/scientific float data). "
+        "Use 'none' to disable compression."
+    ),
+)
 def extract(
     files: tuple[Path, ...],
     output_path: Path | None,
@@ -101,6 +112,7 @@ def extract(
     config: Path | None,
     job: str | None,
     parquet: bool,
+    compression: str | None,
 ) -> None:
     """Extract data from CDF files to CSV or Parquet format.
 
@@ -164,6 +176,15 @@ def extract(
             console.print("[red]Error:[/red] --job requires --config to be specified.")
             raise click.Abort()
 
+        # Validate compression requires parquet
+        if compression is not None and not parquet:
+            raise click.UsageError("--compression requires --parquet")
+
+        # Resolve compression enum (default to ZSTD when using parquet)
+        compression_enum = (
+            ParquetCompression(compression) if compression else ParquetCompression.ZSTD
+        )
+
         # Adjust filename extension if using Parquet
         from crump.file_types import OutputFileType
 
@@ -188,11 +209,20 @@ def extract(
                 append,
                 filename,
                 parquet,
+                compression_enum,
             )
 
         # Mode 2: Raw extraction (current behavior)
         return _extract_raw(
-            files, output_path, filename, automerge, append, variables, max_records, parquet
+            files,
+            output_path,
+            filename,
+            automerge,
+            append,
+            variables,
+            max_records,
+            parquet,
+            compression_enum,
         )
 
     except Exception as e:
@@ -211,6 +241,7 @@ def _extract_with_config(
     append: bool,
     filename: str,
     parquet: bool,
+    compression: ParquetCompression = ParquetCompression.ZSTD,
 ) -> None:
     """Extract CDF files using config-based column mapping.
 
@@ -225,6 +256,7 @@ def _extract_with_config(
         append: Whether to append to existing files
         filename: Filename template for output files
         parquet: Whether to output Parquet format instead of CSV
+        compression: Parquet compression algorithm.
     """
     # Load configuration
     crump_config = CrumpConfig.from_yaml(config_path)
@@ -244,6 +276,8 @@ def _extract_with_config(
     console.print(f"[dim]  Job: {job_name}[/dim]")
     console.print(f"[dim]  Output directory: {output_dir}[/dim]")
     console.print(f"[dim]  Format: {file_format}[/dim]")
+    if parquet:
+        console.print(f"[dim]  Compression: {compression.value}[/dim]")
     if variable_list:
         console.print(f"[dim]  Variables: {', '.join(variable_list)}[/dim]")
     console.print(f"[dim]  Auto-merge: {automerge}[/dim]")
@@ -299,6 +333,7 @@ def _extract_with_config(
                 append=append,
                 filename_template=filename,
                 use_parquet=parquet,
+                parquet_compression=compression,
             )
 
             if not results:
@@ -357,6 +392,7 @@ def _extract_raw(
     variables: tuple[str, ...],
     max_records: int | None,
     parquet: bool,
+    compression: ParquetCompression = ParquetCompression.ZSTD,
 ) -> None:
     """Extract CDF files with raw dump (original behavior).
 
@@ -369,6 +405,7 @@ def _extract_raw(
         variables: Specific variables to extract
         max_records: Maximum records to extract
         parquet: Whether to output Parquet format instead of CSV
+        compression: Parquet compression algorithm.
     """
     try:
         # Determine output directory
@@ -385,6 +422,8 @@ def _extract_raw(
             console.print(f"[dim]  Extracting variables: {', '.join(variable_list)}[/dim]")
         console.print(f"[dim]  Output directory: {output_dir}[/dim]")
         console.print(f"[dim]  Format: {file_format}[/dim]")
+        if parquet:
+            console.print(f"[dim]  Compression: {compression.value}[/dim]")
         console.print(f"[dim]  Auto-merge: {automerge}[/dim]")
         console.print(f"[dim]  Append mode: {append}[/dim]")
         if max_records is not None:
@@ -407,6 +446,7 @@ def _extract_raw(
                     variable_names=variable_list,
                     max_records=max_records,
                     use_parquet=parquet,
+                    parquet_compression=compression,
                 )
 
                 if not results:

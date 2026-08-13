@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from crump.csv_file import CsvFileReader, CsvFileWriter
+from crump.file_types import ParquetCompression
 from crump.parquet_file import ParquetFileReader, ParquetFileWriter
 from crump.tabular_file import create_reader, create_writer
 
@@ -295,3 +296,55 @@ def test_roundtrip_parquet_to_csv(tmp_path: Path) -> None:
         assert len(rows) == 2
         assert rows[0]["name"] == "Alice"
         assert rows[0]["age"] == "30"  # CSV converts to string
+
+
+# ---------------------------------------------------------------------------
+# ParquetCompression enum tests
+# ---------------------------------------------------------------------------
+
+
+def test_parquet_compression_to_pyarrow_none() -> None:
+    assert ParquetCompression.NONE.to_pyarrow() is None
+
+
+@pytest.mark.parametrize(
+    "member",
+    [c for c in ParquetCompression if c is not ParquetCompression.NONE],
+)
+def test_parquet_compression_to_pyarrow_string(member: ParquetCompression) -> None:
+    assert member.to_pyarrow() == member.value
+
+
+# ---------------------------------------------------------------------------
+# ParquetFileWriter compression tests (parameterised over all algorithms)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("compression", list(ParquetCompression))
+def test_parquet_writer_compression(tmp_path: Path, compression: ParquetCompression) -> None:
+    """Writing with every supported algorithm should produce a readable file."""
+    parquet_file = tmp_path / "test.parquet"
+
+    with ParquetFileWriter(parquet_file, compression=compression) as writer:
+        writer.writerow(["name", "value"])
+        writer.writerow(["alpha", "1"])
+        writer.writerow(["beta", "2"])
+
+    with ParquetFileReader(parquet_file) as reader:
+        rows = list(reader)
+
+    assert len(rows) == 2
+    assert rows[0]["name"] == "alpha"
+    assert rows[1]["name"] == "beta"
+
+
+# ---------------------------------------------------------------------------
+# create_writer passes compression to ParquetFileWriter
+# ---------------------------------------------------------------------------
+
+
+def test_create_writer_parquet_passes_compression(tmp_path: Path) -> None:
+    parquet_file = tmp_path / "test.parquet"
+    writer = create_writer(parquet_file, compression=ParquetCompression.GZIP)
+    assert isinstance(writer, ParquetFileWriter)
+    assert writer._compression is ParquetCompression.GZIP
