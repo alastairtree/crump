@@ -858,7 +858,7 @@ def test_extract_cdf_to_parquet_data_fidelity(solo_cdf_file: Path, tmp_path: Pat
         f"Different number of output files: parquet={len(pq_results)}, csv={len(csv_results)}"
     )
 
-    for csv_result, pq_result in zip(csv_results, pq_results):
+    for csv_result, pq_result in zip(csv_results, pq_results, strict=True):
         with create_reader(csv_result.output_file) as csv_reader:
             csv_fieldnames = csv_reader.fieldnames
             csv_rows = list(csv_reader)
@@ -875,7 +875,7 @@ def test_extract_cdf_to_parquet_data_fidelity(solo_cdf_file: Path, tmp_path: Pat
             f"parquet={len(pq_rows)}, csv={len(csv_rows)}"
         )
 
-        for row_idx, (pq_row, csv_row) in enumerate(zip(pq_rows, csv_rows)):
+        for row_idx, (pq_row, csv_row) in enumerate(zip(pq_rows, csv_rows, strict=True)):
             for col in csv_fieldnames:
                 assert str(pq_row[col]) == str(csv_row[col]), (
                     f"Value mismatch at row {row_idx}, col {col!r} "
