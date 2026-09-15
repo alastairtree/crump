@@ -1451,6 +1451,162 @@ jobs:
         assert rows_db[2] == ("3", 3, 2)  # delivered -> 3, medium -> 2
 
 
+class TestNullableEmptyValues:
+    """Integration tests for empty nullable values."""
+
+    def test_sync_empty_nullable_values_become_null_for_all_data_types(
+        self, tmp_path: Path, db_url: str
+    ) -> None:
+        """Test empty CSV fields become NULL for nullable columns across data types."""
+        from tests.test_helpers import create_csv_file
+
+        csv_file = tmp_path / "measurements.csv"
+        rows = [
+            {
+                "record_id": "1",
+                "int_value": "7",
+                "bigint_value": "922337203685477580",
+                "float_value": "2.71",
+                "double_value": "3.14159",
+                "bool_value": "true",
+                "date_value": "2026-09-15",
+                "datetime_value": "2026-09-15T03:48:00",
+                "timestamp_value": "2026-09-15T03:49:00",
+                "text_value": "alpha",
+                "string_value": "beta",
+                "varchar_value": "gamma",
+            },
+            {
+                "record_id": "2",
+                "int_value": "",
+                "bigint_value": "",
+                "float_value": "",
+                "double_value": "",
+                "bool_value": "",
+                "date_value": "",
+                "datetime_value": "",
+                "timestamp_value": "",
+                "text_value": "",
+                "string_value": "",
+                "varchar_value": "",
+            },
+        ]
+        create_csv_file(
+            csv_file,
+            [
+                "record_id",
+                "int_value",
+                "bigint_value",
+                "float_value",
+                "double_value",
+                "bool_value",
+                "date_value",
+                "datetime_value",
+                "timestamp_value",
+                "text_value",
+                "string_value",
+                "varchar_value",
+            ],
+            rows,
+        )
+
+        config_file = tmp_path / "crump_config.yml"
+        config_file.write_text("""
+jobs:
+  test_nullable_empty_values:
+    target_table: nullable_values
+    id_mapping:
+      record_id: id
+    columns:
+      int_value:
+        db_column: int_value
+        type: integer
+        nullable: true
+      bigint_value:
+        db_column: bigint_value
+        type: bigint
+        nullable: true
+      float_value:
+        db_column: float_value
+        type: float
+        nullable: true
+      double_value:
+        db_column: double_value
+        type: double
+        nullable: true
+      bool_value:
+        db_column: bool_value
+        type: boolean
+        nullable: true
+      date_value:
+        db_column: date_value
+        type: date
+        nullable: true
+      datetime_value:
+        db_column: datetime_value
+        type: datetime
+        nullable: true
+      timestamp_value:
+        db_column: timestamp_value
+        type: timestamp
+        nullable: true
+      text_value:
+        db_column: text_value
+        type: text
+        nullable: true
+      string_value:
+        db_column: string_value
+        type: string
+        nullable: true
+      varchar_value:
+        db_column: varchar_value
+        type: varchar(20)
+        nullable: true
+""")
+
+        config = CrumpConfig.from_yaml(config_file)
+        job = config.get_job("test_nullable_empty_values")
+        assert job is not None
+
+        rows_synced = sync_file_to_db(csv_file, job, db_url)
+        assert rows_synced == 2
+
+        null_row = execute_query(
+            db_url,
+            """
+            SELECT
+                int_value,
+                bigint_value,
+                float_value,
+                double_value,
+                bool_value,
+                date_value,
+                datetime_value,
+                timestamp_value,
+                text_value,
+                string_value,
+                varchar_value
+            FROM nullable_values
+            WHERE id = %s
+            """,
+            ("2",),
+        )[0]
+
+        assert null_row == (
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+
+
 class TestCustomFunctions:
     """Integration tests for custom function column mappings."""
 
