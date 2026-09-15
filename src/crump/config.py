@@ -1032,9 +1032,7 @@ def apply_row_transformations(
             # Apply lookup transformation if configured
             transformed_value = col_mapping.apply_lookup(csv_value)
 
-            if transformed_value is None:
-                row_data[col_mapping.db_column] = None
-            elif transformed_value == "" and col_mapping.nullable:
+            if transformed_value is None or (transformed_value == "" and col_mapping.nullable):
                 row_data[col_mapping.db_column] = None
             # Apply boolean conversion if the column is boolean type
             elif col_mapping.data_type and col_mapping.data_type.lower() in ("boolean", "bool"):
