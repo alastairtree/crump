@@ -148,6 +148,18 @@ jobs:
       email: email_address
 """)
 
+    temporal_blocks = extract_code_blocks(
+        (Path(__file__).parent.parent / "docs" / "date-and-time.md").read_text()
+    )
+    observations_csv = tmp_path / "observations.csv"
+    observations_csv.write_text(
+        next(b["content"] for b in temporal_blocks if b["language"] == "csv")
+    )
+    observations_yaml = tmp_path / "observations.yml"
+    observations_yaml.write_text(
+        next(b["content"] for b in temporal_blocks if b["language"] == "yaml")
+    )
+
     return {
         "users.csv": users_csv,
         "sample.csv": sample_csv,
@@ -155,6 +167,8 @@ jobs:
         "activity_log.csv": activity_log_csv,
         "users_v2.csv": users_v2_csv,
         "crump_config.yml": config_yaml,
+        "observations.csv": observations_csv,
+        "observations.yml": observations_yaml,
         "tmp_path": tmp_path,
     }
 

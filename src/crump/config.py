@@ -11,6 +11,8 @@ from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
+from crump.temporal import is_temporal, parse_temporal, validate_datetime_format
+
 
 class FailureMode(enum.Enum):
     """Controls how data/config mismatches are handled during sync.
@@ -80,6 +82,7 @@ class ColumnMapping:
         expression: str | None = None,
         function: str | None = None,
         input_columns: list[str] | None = None,
+        datetime_format: str | None = None,
     ) -> None:
         """Initialize column mapping.
 
@@ -99,6 +102,7 @@ class ColumnMapping:
                      Example: "my_functions.calculate_percentage"
             input_columns: List of CSV column names to pass as parameters to expression/function.
                           Required if expression or function is specified.
+            datetime_format: Optional Python strptime format for a temporal column.
 
         Raises:
             ValueError: If both expression and function are specified, or if expression/function
@@ -119,6 +123,8 @@ class ColumnMapping:
         self.expression = expression
         self.function = function
         self.input_columns = input_columns
+        validate_datetime_format(data_type, datetime_format)
+        self.datetime_format = datetime_format
 
     def apply_lookup(self, value: str) -> Any:
         """Apply lookup transformation to a value.
@@ -217,6 +223,7 @@ class FilenameColumnMapping:
         db_column: str | None = None,
         data_type: str | None = None,
         use_to_delete_old_rows: bool = False,
+        datetime_format: str | None = None,
     ) -> None:
         """Initialize filename column mapping.
 
@@ -225,11 +232,14 @@ class FilenameColumnMapping:
             db_column: Database column name (defaults to name if not specified)
             data_type: Data type (varchar(N), integer, float, date, datetime, text)
             use_to_delete_old_rows: If True, this column is used to identify stale rows
+            datetime_format: Optional Python strptime format for the extracted value.
         """
         self.name = name
         self.db_column = db_column or name
         self.data_type = data_type
         self.use_to_delete_old_rows = use_to_delete_old_rows
+        validate_datetime_format(data_type, datetime_format)
+        self.datetime_format = datetime_format
 
 
 class FilenameToColumn:
@@ -644,6 +654,7 @@ class CrumpConfig:
                 expression=expression,
                 function=function,
                 input_columns=input_columns,
+                datetime_format=value.get("datetime_format"),
             )
         else:
             raise ValueError(
@@ -732,11 +743,13 @@ class CrumpConfig:
                     db_column = col_data.get("db_column")
                     data_type = col_data.get("type")
                     use_to_delete_old_rows = col_data.get("use_to_delete_old_rows", False)
+                    datetime_format = col_data.get("datetime_format")
                 elif col_data is None:
                     # Simple format: column_name: null (use defaults)
                     db_column = None
                     data_type = None
                     use_to_delete_old_rows = False
+                    datetime_format = None
                 else:
                     raise ValueError(
                         f"Job '{name}' filename_to_column column '{col_name}' must be a dictionary or null"
@@ -747,6 +760,7 @@ class CrumpConfig:
                     db_column=db_column,
                     data_type=data_type,
                     use_to_delete_old_rows=use_to_delete_old_rows,
+                    datetime_format=datetime_format,
                 )
 
             filename_to_column = FilenameToColumn(
@@ -874,6 +888,8 @@ class CrumpConfig:
                     mapping_dict: dict[str, Any] = {"db_column": id_col.db_column}
                     if id_col.data_type:
                         mapping_dict["type"] = id_col.data_type
+                    if id_col.datetime_format:
+                        mapping_dict["datetime_format"] = id_col.datetime_format
                     if id_col.nullable is not None:
                         mapping_dict["nullable"] = id_col.nullable
                     if id_col.lookup is not None:
@@ -911,6 +927,8 @@ class CrumpConfig:
                         mapping_dict = {"db_column": col.db_column}
                         if col.data_type:
                             mapping_dict["type"] = col.data_type
+                        if col.datetime_format:
+                            mapping_dict["datetime_format"] = col.datetime_format
                         if col.nullable is not None:
                             mapping_dict["nullable"] = col.nullable
                         if col.lookup is not None:
@@ -943,6 +961,8 @@ class CrumpConfig:
                         col_dict["db_column"] = col_mapping.db_column
                     if col_mapping.data_type:
                         col_dict["type"] = col_mapping.data_type
+                    if col_mapping.datetime_format:
+                        col_dict["datetime_format"] = col_mapping.datetime_format
                     if col_mapping.use_to_delete_old_rows:
                         col_dict["use_to_delete_old_rows"] = True
 
@@ -1004,6 +1024,7 @@ def apply_row_transformations(
     sync_columns: list[ColumnMapping],
     filename_to_column: FilenameToColumn | None = None,
     filename_values: dict[str, str] | None = None,
+    parse_temporals: bool = True,
 ) -> dict[str, Any]:
     """Apply column transformations to a CSV row.
 
@@ -1015,6 +1036,7 @@ def apply_row_transformations(
         sync_columns: List of ColumnMapping objects defining transformations
         filename_to_column: Optional FilenameToColumn configuration
         filename_values: Optional dict of values extracted from filename
+        parse_temporals: Parse configured temporal values. Sync defers this to row validation.
 
     Returns:
         Dictionary with transformed values (db_column_name -> value)
@@ -1056,5 +1078,22 @@ def apply_row_transformations(
         for col_name, filename_col_mapping in filename_to_column.columns.items():
             if col_name in filename_values:
                 row_data[filename_col_mapping.db_column] = filename_values[col_name]
+
+    if parse_temporals:
+        mappings = list(sync_columns)
+        if filename_to_column:
+            mappings.extend(
+                ColumnMapping(
+                    None, col.db_column, col.data_type, datetime_format=col.datetime_format
+                )
+                for col in filename_to_column.columns.values()
+            )
+        for mapping in mappings:
+            value = row_data.get(mapping.db_column)
+            if is_temporal(mapping.data_type) and value is not None and str(value).strip():
+                assert mapping.data_type is not None
+                row_data[mapping.db_column] = parse_temporal(
+                    value, mapping.data_type, mapping.datetime_format
+                )
 
     return row_data

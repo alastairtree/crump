@@ -64,6 +64,9 @@ columns:
 !!! tip
     If you omit the `columns` field entirely, all CSV columns are synced with their original names.
 
+Data types for columns are detected automatically (where possible) and can be
+configured. See [Type Detection](features.md#type-detection).
+
 ### Column Lookups
 
 Transform CSV values to different values in the database using lookup dictionaries. This is useful for:

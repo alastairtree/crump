@@ -743,8 +743,8 @@ jobs:
         assert len(rows) == 2
         # For PostgreSQL: date becomes date object, for SQLite: stays as string
         if db_url.startswith("sqlite"):
-            assert rows[0] == ("1", "42.5", "imap", "primary", "20240115", "002")
-            assert rows[1] == ("2", "38.2", "imap", "primary", "20240115", "002")
+            assert rows[0] == ("1", "42.5", "imap", "primary", "2024-01-15", "002")
+            assert rows[1] == ("2", "38.2", "imap", "primary", "2024-01-15", "002")
         else:
             from datetime import date
 
@@ -797,7 +797,7 @@ jobs:
         # For SQLite: date stays as string, version becomes integer
         # For PostgreSQL: date becomes date object, version becomes integer
         if db_url.startswith("sqlite"):
-            assert rows[0] == ("1", "test", "20240315", 1)
+            assert rows[0] == ("1", "test", "2024-03-15", 1)
         else:
             from datetime import date
 

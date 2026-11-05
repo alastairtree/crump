@@ -68,9 +68,11 @@ nav:
     - Quick Start: quick-start.md
   - User Guide:
     - Configuration: configuration.md
+    - Dates, Times and Nanoseconds: date-and-time.md
     - CLI Reference: cli-reference.md
     - Features: features.md
   - Developer Guide:
     - API Reference: api-reference.md
     - Development: development.md
     - Contributing: contributing.md
+  - Changelog: changelog.md
