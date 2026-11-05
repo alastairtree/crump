@@ -138,6 +138,8 @@ def test_explicit_format(value: str, kind: str, fmt: str, expected: str) -> None
         ("date", ""),
         ("date", "%Q"),
         ("date", "%Y-%Y"),
+        ("date", "%Y-W%V-%u"),
+        ("date", "%G-%m-%d"),
         ("date", "%"),
         ("date", 42),
     ],
@@ -476,6 +478,33 @@ def test_cli_temporal_key_and_filename_cleanup(
     assert tuple(map(str, row)) == ("2024-02-29", "updated", "2024-02-29")
 
 
+@pytest.mark.parametrize("mode", ["strict", "permissive"])
+def test_invalid_filename_cleanup_key_fails_before_writes(
+    cli_runner: CliRunner, tmp_path: Path, db_url: str, mode: str
+) -> None:
+    config = write_job(
+        tmp_path,
+        {"value": "value"},
+        failure_mode=mode,
+        filename_to_column={
+            "template": "data_[date].csv",
+            "columns": {
+                "date": {
+                    "db_column": "file_date",
+                    "type": "varchar(3)",
+                    "use_to_delete_old_rows": True,
+                }
+            },
+        },
+    )
+    source = write_values(tmp_path / "data_abcd.csv", ["1"])
+    result = invoke_sync(cli_runner, source, config, db_url)
+    assert result.exit_code != 0
+    assert "exceeds varchar(3)" in " ".join(result.output.split())
+    with DatabaseConnection(db_url) as db:
+        assert not db.table_exists("dates")
+
+
 def test_cli_existing_timezone_mismatch(cli_runner: CliRunner, tmp_path: Path, db_url: str) -> None:
     if db_url.startswith("sqlite"):
         pytest.skip("PostgreSQL schema timezone check")
@@ -487,6 +516,12 @@ def test_cli_existing_timezone_mismatch(cli_runner: CliRunner, tmp_path: Path, d
         result = invoke_sync(cli_runner, source, config, db_url, dry)
         assert result.exit_code != 0
         assert "migrate it explicitly" in " ".join(result.output.split())
+    assert str(execute_query(db_url, "SELECT value FROM dates")[0][0]) == "2024-02-29 12:30:00"
+    source.write_text("id,value\n1,2024-02-29T12:30:00+02:00\n2,2024-02-29T12:30:00\n")
+    for dry in (True, False):
+        result = invoke_sync(cli_runner, source, config, db_url, dry)
+        assert result.exit_code != 0
+        assert "incoming mapping is non-temporal" in " ".join(result.output.split())
     assert str(execute_query(db_url, "SELECT value FROM dates")[0][0]) == "2024-02-29 12:30:00"
 
 
@@ -516,8 +551,8 @@ def test_cli_compact_checks_after_1000(
     config = write_job(tmp_path, {"value": "value"})
     result = invoke_sync(cli_runner, source, config, db_url)
     assert result.exit_code == 0, result.output
-    assert not any("automatically parsing" in message for message in caplog.messages)
-    assert execute_query(db_url, "SELECT value FROM dates WHERE id = 1002")[0][0] == "21000101"
+    assert any("as date using %Y%m%d" in message for message in caplog.messages)
+    assert execute_query(db_url, "SELECT value FROM dates WHERE id = 1002")[0][0] is None
 
 
 def test_cli_logger_lifetime_and_file_scope(

@@ -467,7 +467,7 @@ for all supported formats and the optional Python `datetime_format` setting.
 | BIGINT | `815230591184000000`, `9223372036854775807` | Large integers exceeding INTEGER range |
 | FLOAT | `3.14`, `-0.5`, `1.23e-4` | Floating point numbers |
 | BOOLEAN | `true`, `false`, `yes`, `no`, `y`, `n`, `active`, `inactive`, `enabled`, `disabled` | Boolean values (case-insensitive) |
-| DATE | `2024-01-15`, `15/01/2024`, `20240115` | Compact integers are dates only when the entire column qualifies |
+| DATE | `2024-01-15`, `15/01/2024`, `20240115` | `prepare` checks the full column for compact dates; sync samples at most 1,000 rows |
 | TIME | `14:30`, `14:30:45.123456` | Time without a timezone |
 | DATETIME | `2024-01-15T14:30:45` | Naive datetime, up to microsecond precision |
 | TIMESTAMPTZ | `2024-01-15T14:30:45Z` | Datetime with an explicit offset |

@@ -41,8 +41,10 @@ Crump does not execute custom calculations during inference.
 
 Before inferring integers, Crump checks whether **every non-empty value in the entire
 column** is an eight-digit integer between **19700101 and 20991231 inclusive**, and
-is a valid `%Y%m%d` calendar date. If so, it infers `date`. This checks values beyond
-row 1,000. Empty values affect nullability; entirely empty columns are not dates.
+is a valid `%Y%m%d` calendar date. `prepare` checks the full column before inferring
+the type. During `sync`, automatic inference is bounded to the first 1,000 data rows
+to avoid a full-file preflight; use an explicit `type` when later rows determine the
+intended type. Empty values affect nullability; entirely empty columns are not dates.
 
 `19700101`, `20240229` and `20991231` qualify. If a numeric column also contains
 `19691231`, `21000101` or invalid `20240230`, it remains numeric.

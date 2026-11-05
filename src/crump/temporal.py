@@ -56,11 +56,11 @@ def validate_datetime_format(data_type: str | None, fmt: str | None) -> None:
         raise ValueError("datetime_format must be a non-empty Python strptime format string")
     if not is_temporal(data_type):
         raise ValueError("datetime_format requires a temporal type")
+    representative = datetime(2004, 2, 29, 12, 34, 56, 123456, timezone.utc)
     try:
-        datetime.strptime("", fmt)
+        datetime.strptime(representative.strftime(fmt), fmt)
     except (ValueError, re.error) as exc:
-        if "does not match format" not in str(exc):
-            raise ValueError(f"Invalid datetime_format {fmt!r}: {exc}") from exc
+        raise ValueError(f"Invalid datetime_format {fmt!r}: {exc}") from exc
 
 
 def _parse_time(value: str, *, datetime_component: bool = False) -> ParsedTemporal:
@@ -174,6 +174,39 @@ def infer_temporal(values: list[str]) -> tuple[str | None, set[str]]:
     if len(kinds) == 1:
         return next(iter(kinds)), formats
     return None, set()
+
+
+class TemporalInference:
+    """Incrementally summarise a bounded sample without retaining its cell values."""
+
+    def __init__(self) -> None:
+        self.kinds: set[str] = set()
+        self.formats: set[str] = set()
+        self.valid = True
+        self.has_submicrosecond_value = False
+
+    def add(self, value: str) -> None:
+        if not value.strip():
+            return
+        try:
+            parsed = parse_automatic(value)
+        except ValueError as exc:
+            self.valid = False
+            if "sub-microsecond" in str(exc):
+                self.has_submicrosecond_value = True
+            return
+        self.kinds.add(parsed.data_type)
+        self.formats.add(parsed.format)
+
+    def result(self) -> tuple[str | None, set[str]]:
+        if not self.valid or not self.kinds:
+            return None, set()
+        if self.kinds <= {"date", "datetime"}:
+            kind = "datetime" if "datetime" in self.kinds else "date"
+            return kind, self.formats
+        if len(self.kinds) == 1:
+            return next(iter(self.kinds)), self.formats
+        return None, set()
 
 
 def parse_temporal(value: Any, data_type: str, fmt: str | None = None) -> str:

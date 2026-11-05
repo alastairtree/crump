@@ -8,6 +8,7 @@ import sqlite3
 from collections import defaultdict
 from collections.abc import Iterator
 from copy import copy
+from itertools import islice
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -22,7 +23,7 @@ from crump.config import (
     apply_row_transformations,
 )
 from crump.tabular_file import create_reader
-from crump.temporal import infer_temporal, is_temporal, parse_automatic, parse_temporal
+from crump.temporal import TemporalInference, is_temporal, parse_automatic, parse_temporal
 
 
 def _detect_file_format(file_path: Path) -> Any:
@@ -1849,35 +1850,23 @@ class DatabaseConnection:
         cls,
         file_path: Path,
         mapping: ColumnMapping | FilenameColumnMapping,
-        values: list[str],
+        inference: TemporalInference,
         source: str,
     ) -> None:
         if mapping.data_type is None:
-            inferred, _ = infer_temporal(values)
+            inferred, _ = inference.result()
             if inferred is None:
-                # Surface precision loss risks rather than quietly treating scientific
-                # timestamps as ordinary text.
-                for value in values:
-                    try:
-                        parse_automatic(value)
-                    except ValueError as exc:
-                        if "sub-microsecond" in str(exc):
-                            logger.warning(f"{file_path.name}: '{source}' retained as text: {exc}")
-                            break
+                if inference.has_submicrosecond_value:
+                    logger.warning(
+                        f"{file_path.name}: '{source}' retained as text: "
+                        "sub-microsecond precision requires explicit text or "
+                        "epoch-nanosecond storage"
+                    )
                 return
             mapping.data_type = inferred
         if not is_temporal(mapping.data_type) or mapping.datetime_format is not None:
             return
-        formats = set()
-        for value in values:
-            if not value.strip():
-                continue
-            try:
-                formats.add(parse_automatic(value).format)
-            except ValueError:
-                # Row validation reports the failure and applies the configured mode.
-                continue
-        cls._log_parser_formats(file_path, mapping, formats, source)
+        cls._log_parser_formats(file_path, mapping, inference.formats, source)
 
     @staticmethod
     def _log_parser_formats(
@@ -1908,17 +1897,17 @@ class DatabaseConnection:
         ]
         if not candidates:
             return
-        values: dict[str, list[str]] = {col.db_column: [] for col in candidates}
+        inferences = {col.db_column: TemporalInference() for col in candidates}
         with create_reader(file_path, file_format=_detect_file_format(file_path)) as reader:
-            for row in reader:
+            for row in islice(reader, 1000):
                 transformed = apply_row_transformations(row, candidates, parse_temporals=False)
                 for col in candidates:
                     value = transformed.get(col.db_column)
                     if value is not None and str(value).strip():
-                        values[col.db_column].append(str(value))
+                        inferences[col.db_column].add(str(value))
         for col in candidates:
             self._resolve_temporal_mapping(
-                file_path, col, values[col.db_column], col.csv_column or col.db_column
+                file_path, col, inferences[col.db_column], col.csv_column or col.db_column
             )
 
     def _resolve_filename_columns(
@@ -1932,18 +1921,25 @@ class DatabaseConnection:
             }
             for name, col in resolved.filename_to_column.columns.items():
                 if name in filename_values:
-                    self._resolve_temporal_mapping(
-                        file_path, col, [filename_values[name]], f"filename[{name}]"
-                    )
+                    inference = TemporalInference()
+                    inference.add(filename_values[name])
+                    self._resolve_temporal_mapping(file_path, col, inference, f"filename[{name}]")
         return resolved
 
-    @staticmethod
-    def _filename_delete_values(job: CrumpJob, filename_values: dict[str, str]) -> dict[str, str]:
+    def _filename_delete_values(
+        self, job: CrumpJob, filename_values: dict[str, str]
+    ) -> dict[str, str]:
         values = {}
         if job.filename_to_column:
             for name, col in job.filename_to_column.columns.items():
                 if col.use_to_delete_old_rows and name in filename_values:
                     value = filename_values[name]
+                    varchar_limit = self._get_varchar_limit(col.data_type)
+                    if varchar_limit is not None and len(value) > varchar_limit:
+                        raise ValueError(
+                            f"Filename cleanup value for '{col.db_column}' exceeds "
+                            f"varchar({varchar_limit}); refusing to sync or delete records"
+                        )
                     if is_temporal(col.data_type):
                         assert col.data_type is not None
                         value = parse_temporal(value, col.data_type, col.datetime_format)
@@ -1969,6 +1965,11 @@ class DatabaseConnection:
                 "timestamp without time zone",
                 "timestamp with time zone",
             }
+            if old_type in temporal_sql_types and new_type not in temporal_sql_types:
+                raise ValueError(
+                    f"Column '{column}' in '{table}' is temporal but the incoming mapping "
+                    "is non-temporal; migrate it explicitly before syncing"
+                )
             if (
                 old_type in temporal_sql_types
                 and new_type in temporal_sql_types
