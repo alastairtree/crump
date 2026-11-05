@@ -706,9 +706,9 @@ jobs:
             assert "file_version" in headers, f"file_version not in headers: {headers}"
 
             # Verify first row has extracted values
-            # Note: the date is extracted as raw string from filename template, not converted
+            # Configured temporal filename values use the same canonical form as sync.
             first_row = next(reader)
-            assert first_row.get("file_date") == "20251010"
+            assert first_row.get("file_date") == "2025-10-10"
             assert first_row.get("file_version") == "001"
 
 

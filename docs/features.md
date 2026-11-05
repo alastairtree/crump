@@ -2,6 +2,15 @@
 
 Detailed documentation of all crump features.
 
+## Automatic Temporal Parsing
+
+Common dates, times and datetimes are automatically inferred and validated, including
+named months, offsets and compact dates between 19700101 and 20991231 when the whole
+column qualifies. Numeric month-first dates require explicit YAML `datetime_format`;
+`03/04/2024` always means 3 April. Sync and dry-run report the selected formats once
+per temporal column/file. See [Dates, Times and Nanoseconds](date-and-time.md) for
+formats, explicit overrides and exact nanosecond storage on PostgreSQL and SQLite.
+
 ## Idempotent Operations
 
 Running sync multiple times is safe - it uses PostgreSQL's `INSERT ... ON CONFLICT DO UPDATE` (upsert).

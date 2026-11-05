@@ -235,6 +235,18 @@ print(f"Suggested ID: {id_col}")  # Output: name (first column)
 
 ## Configuration Classes
 
+Temporal mappings accept `datetime_format: str | None`, a Python `strptime` format
+requiring a temporal `data_type`. Supported types include `date`, `time`, `datetime`,
+`timestamp`, `timestamptz` and `timetz`. Without an explicit format, numeric date
+parsing is day-first/year-first, never numeric month-first. This applies to
+`ColumnMapping` and `FilenameColumnMapping`.
+See [Dates, Times and Nanoseconds](date-and-time.md) for inference and storage rules.
+
+`crump.temporal.iso_to_epoch_ns(value: str) -> int` converts offset-aware ISO
+timestamp strings to signed 64-bit epoch nanoseconds without floating-point loss.
+It raises `ValueError` for invalid syntax, missing offsets, excessive precision
+or overflow, and can be used as a configured `function`.
+
 ### CrumpConfig
 
 Main configuration container.

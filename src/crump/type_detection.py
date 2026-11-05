@@ -1,9 +1,9 @@
 """Type detection for CSV columns."""
 
-import re
 from pathlib import Path
 
 from crump.tabular_file import create_reader
+from crump.temporal import infer_temporal
 
 
 def detect_column_type(values: list[str]) -> str:
@@ -13,17 +13,20 @@ def detect_column_type(values: list[str]) -> str:
         values: List of string values from the column (excluding empty strings)
 
     Returns:
-        Detected type: 'bigint', 'integer', 'float', 'date', 'datetime', 'boolean', 'text', or 'varchar(N)'
+        Detected scalar type, including date/time and timezone-aware temporal types.
     """
     if not values:
         return "text"
 
-    # Sample up to 1000 values for performance
-    sample = values[:1000]
-    non_empty = [v for v in sample if v.strip()]
+    non_empty = [v for v in values if v.strip()]
 
     if not non_empty:
         return "text"
+
+    # Compact dates take precedence over integers only when the entire column qualifies.
+    temporal_type, _ = infer_temporal(non_empty)
+    if temporal_type is not None:
+        return temporal_type
 
     # Check if ANY value is a bigint AND all values are numeric (integers)
     # This handles mixed cases where some values are small integers and some are large
@@ -41,14 +44,6 @@ def detect_column_type(values: list[str]) -> str:
     # Check if all values are booleans
     if all(_is_boolean(v) for v in non_empty):
         return "boolean"
-
-    # Check if all values are dates
-    if all(_is_date(v) for v in non_empty):
-        return "date"
-
-    # Check if all values are datetimes
-    if all(_is_datetime(v) for v in non_empty):
-        return "datetime"
 
     # Check if it's a short text field (could use varchar)
     max_length = max(len(v) for v in non_empty)
@@ -143,31 +138,6 @@ def _is_boolean(value: str) -> bool:
     }
 
     return value_lower in boolean_values
-
-
-def _is_date(value: str) -> bool:
-    """Check if a string represents a date (YYYY-MM-DD format)."""
-    # Common date patterns
-    date_patterns = [
-        r"^\d{4}-\d{2}-\d{2}$",  # YYYY-MM-DD
-        r"^\d{4}/\d{2}/\d{2}$",  # YYYY/MM/DD
-        r"^\d{2}-\d{2}-\d{4}$",  # DD-MM-YYYY
-        r"^\d{2}/\d{2}/\d{4}$",  # DD/MM/YYYY or MM/DD/YYYY
-    ]
-
-    return any(re.match(pattern, value.strip()) for pattern in date_patterns)
-
-
-def _is_datetime(value: str) -> bool:
-    """Check if a string represents a datetime."""
-    # Common datetime patterns
-    datetime_patterns = [
-        r"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}",  # YYYY-MM-DD HH:MM:SS
-        r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}",  # ISO format
-        r"^\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2}",  # MM/DD/YYYY HH:MM:SS
-    ]
-
-    return any(re.match(pattern, value.strip()) for pattern in datetime_patterns)
 
 
 def detect_nullable(values: list[str], total_rows: int) -> bool:

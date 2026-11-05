@@ -21,6 +21,13 @@ crump [OPTIONS] COMMAND [ARGS]...
 
 Sync a CSV, Parquet, or CDF file to the database using a configuration.
 
+Untyped mappings infer common temporal formats automatically. Both sync and dry-run
+print one INFO parser-format message per automatically parsed temporal column/file.
+Dry-run applies the same parsing and row validation without database mutations.
+Numeric dates are day-first/year-first, never automatically numeric month-first.
+Use YAML `datetime_format` for explicit Python parsing formats.
+See [Dates, Times and Nanoseconds](date-and-time.md) for formats and storage options.
+
 ```bash
 crump sync FILE_PATH [OPTIONS]
 ```

@@ -23,6 +23,7 @@ Examines and syncs CSV, Parquet, and CDF files into PostgreSQL or SQLite databas
 ### Data Synchronization
 - **Configuration-Based**: Examines your CSV files with the prepare command, and defines sync jobs in YAML with sensible column mappings
 - **Column Mapping**: Sync all columns, rename them, or only sync a subset
+- **Date/Time Parsing**: Automatically detect common day-first/year-first and named-month formats, or specify Python formats in YAML; [store nanoseconds losslessly](docs/date-and-time.md)
 - **Automatic Table Creation**: Creates target tables if they don't exist
 - **Schema Evolution**: Automatically adds new columns as needed, never deletes existing columns. Optionally keeps a history of data changes in a history table.
 - **Index Management**: Suggests and creates database indexes based on column types
