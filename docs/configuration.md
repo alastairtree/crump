@@ -64,12 +64,8 @@ columns:
 !!! tip
     If you omit the `columns` field entirely, all CSV columns are synced with their original names.
 
-Untyped mappings automatically recognise common dates, times and datetimes.
-Numeric dates are **day-first or year-first, never automatically month-first**;
-named-month forms such as `Feb 29, 2024` are supported.
-Set a temporal `type` and optional Python `datetime_format` to control parsing.
-See [Dates, Times and Nanoseconds](date-and-time.md) for supported formats,
-timezone-aware types, complete YAML examples and lossless nanosecond storage.
+Data types for columns are detected automatically (where possible) and can be
+configured. See [Type Detection](features.md#type-detection).
 
 ### Column Lookups
 

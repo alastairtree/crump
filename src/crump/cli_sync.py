@@ -1,6 +1,5 @@
 """Sync command for syncing CSV, Parquet, and CDF files to database."""
 
-import logging
 import tempfile
 from pathlib import Path
 
@@ -13,11 +12,6 @@ from crump.console_utils import BULLET, CHECKMARK, HORIZONTAL_LINE
 from crump.database import sync_file_to_db, sync_file_to_db_dry_run
 
 console = Console()
-
-
-class _ParserLogHandler(logging.Handler):
-    def emit(self, record: logging.LogRecord) -> None:
-        console.print(f"{record.levelname}: {record.getMessage()}", markup=False, soft_wrap=True)
 
 
 def _extract_cdf_and_find_tabular_files(
@@ -159,13 +153,6 @@ def sync(
     """
     temp_dir: Path | None = None
     temp_csv_files: list[Path] = []
-    parser_logger = logging.getLogger("crump.temporal")
-    parser_handler = _ParserLogHandler()
-    previous_level = parser_logger.level
-    previous_propagate = parser_logger.propagate
-    parser_logger.addHandler(parser_handler)
-    parser_logger.setLevel(logging.INFO)
-    parser_logger.propagate = False
 
     try:
         # Load configuration
@@ -338,9 +325,6 @@ def sync(
         console.print(f"[red]Unexpected error:[/red] {e}")
         raise click.Abort() from e
     finally:
-        parser_logger.removeHandler(parser_handler)
-        parser_logger.setLevel(previous_level)
-        parser_logger.propagate = previous_propagate
         # Clean up temporary files if CDF was extracted
         if temp_csv_files:
             console.print("[dim]Cleaning up temporary files...[/dim]")

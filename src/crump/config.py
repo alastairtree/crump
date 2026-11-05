@@ -743,11 +743,13 @@ class CrumpConfig:
                     db_column = col_data.get("db_column")
                     data_type = col_data.get("type")
                     use_to_delete_old_rows = col_data.get("use_to_delete_old_rows", False)
+                    datetime_format = col_data.get("datetime_format")
                 elif col_data is None:
                     # Simple format: column_name: null (use defaults)
                     db_column = None
                     data_type = None
                     use_to_delete_old_rows = False
+                    datetime_format = None
                 else:
                     raise ValueError(
                         f"Job '{name}' filename_to_column column '{col_name}' must be a dictionary or null"
@@ -758,7 +760,7 @@ class CrumpConfig:
                     db_column=db_column,
                     data_type=data_type,
                     use_to_delete_old_rows=use_to_delete_old_rows,
-                    datetime_format=col_data.get("datetime_format") if col_data else None,
+                    datetime_format=datetime_format,
                 )
 
             filename_to_column = FilenameToColumn(

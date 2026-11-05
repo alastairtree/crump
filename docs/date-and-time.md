@@ -15,6 +15,7 @@ All parsing validates real calendar dates and consumes the complete value.
 | Named months, either order | `29 Feb 2024`, `29 February 2024`, `Feb 29, 2024`, `February 29, 2024` |
 | Times | `14:30`, `14:30:45`, `14:30:45.123456` |
 | 12-hour times | `2:30 PM`, `02:30:45 am` |
+| ISO 8601 datetimes | `2024-02-29T14:30:45`, `2024-02-29T14:30:45.123456Z` |
 | Datetimes | `2024-02-29T14:30`, `2024-02-29 14:30:45`, `29/02/2024 14:30:45`, `29-02-2024 2:30 PM` |
 | Named-month datetimes | `29 Feb 2024 14:30:45`, `Feb 29, 2024 2:30 PM` |
 | Fractional datetimes | `2024-02-29T14:30:45.123456` |
@@ -78,22 +79,6 @@ crump sync observations.csv -c observations.yml --db-url sqlite:///observations.
 crump sync observations.csv -c observations.yml --db-url sqlite:///observations.db
 ```
 
-Both `sync` and `sync --dry-run` print one default-visible **INFO message per
-automatically parsed temporal column per source file**, listing the selected parser
-formats. They do not print one message per row. Mixed-format columns list all
-selected formats in a single message.
-Source-column formats are reported before writes. For explicitly temporal computed
-columns, formats are collected during processing and reported once at the end,
-so custom functions are not executed twice.
-
-```text
-INFO: observations.csv: automatically parsing observation_date -> observation_date as date using %d/%m/%Y (numeric dates are year-first or day-first, never month-first).
-```
-
-The reported `%f` means up to six fractional digits; `%z` accepts `Z`, `+HH:MM` or
-`+HHMM`. Messages show whether the actual date/time separator is a space or `T`.
-Explicit `datetime_format` mappings are not reported as automatic decisions.
-
 ### Explicit Python formats
 
 Use `datetime_format` with a temporal `type` for any format supported by Python
@@ -138,32 +123,6 @@ For example, `us_datetime` accepts `12/31/2024 2:30 PM`; it is never inferred th
 Unlike automatic English-month parsing, explicit `%b`, `%B` and `%p` follow Python's
 locale rules. See the [Python format directives](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes).
 
-Custom punctuation and filename dates are supported:
-
-```yaml
-jobs:
-  daily_readings:
-    target_table: daily_readings
-    id_mapping:
-      id: id
-    columns:
-      captured_at:
-        db_column: captured_at
-        type: datetime
-        datetime_format: "%Y|%m|%d %Hh%Mm%Ss"
-    filename_to_column:
-      template: "readings_[date].csv"
-      columns:
-        date:
-          db_column: file_date
-          type: date
-          datetime_format: "%Y%m%d"
-          use_to_delete_old_rows: true
-```
-
-This parses `2024|02|29 14h30m45s` and filenames such as `readings_20240229.csv`.
-Temporal primary keys and filename cleanup use the same normalised values.
-
 ## Storage, timezones and validation
 
 | Configuration type | PostgreSQL | SQLite representation |
@@ -188,23 +147,6 @@ Python format strings do not extend the year range or precision.
 More than six fractional digits are not silently rounded: untyped columns retain
 text with a warning; explicitly temporal columns treat them as invalid.
 Use the lossless options below for scientific/CDF nanoseconds.
-
-For malformed non-empty temporal values:
-
-| Mode | Nullable column | Non-nullable column / primary key |
-|---|---|---|
-| `strict` | Skip row | Skip row |
-| `permissive` (default) | Store NULL | Skip row |
-
-Warnings include a representative selected-row number, column and reason, followed
-by grouped counts. If strict mode rejects every selected row, the operation fails.
-Empty values retain existing behaviour: nullable fields become NULL; strict mode
-skips non-nullable blanks; permissive mode uses the minimum date/datetime or midnight
-for non-nullable temporal blanks. Invalid non-empty dates never become minimum dates.
-Invalid format configuration is rejected before writes.
-
-Dry-run applies the same parsing and row validation and reports eligible-row counts,
-without creating tables, modifying rows or recording history.
 
 ## Lossless nanosecond storage
 
@@ -257,22 +199,6 @@ The exact limits are `-9223372036854775808` through `9223372036854775807`:
 Negative integers represent instants before 1970. Original timezone offsets are not
 retained. NumPy's `datetime64[ns]` reserves the minimum integer for `NaT`, so its
 smallest valid instant is one nanosecond later.
-
-Order and compare integers directly, without floating-point or SQL timestamp conversion:
-
-```sql
-SELECT observed_at_epoch_ns
-FROM precise_integer
-ORDER BY observed_at_epoch_ns;
-
-SELECT observed_at_epoch_ns
-FROM precise_integer
-WHERE observed_at_epoch_ns >= 0 AND observed_at_epoch_ns < 1000000000;
-```
-
-The second query selects instants in the first second of 1970. Subtraction is exact
-only while the result fits the backend's integer range; SQLite can promote an
-overflowing subtraction to REAL. Use Python integers for arbitrary-range differences.
 
 ### Convert ISO timestamp strings without losing digits
 
@@ -329,34 +255,3 @@ def iso_to_epoch_ns(value: str) -> int:
 To customise it, save the module in an importable directory, add that directory to
 `PYTHONPATH`, and change the YAML function to `timestamp_helpers.iso_to_epoch_ns`.
 The built-in helper needs no additional module or dependency.
-
-CDF-extracted timestamps can have nine fractional digits without an offset. TEXT
-storage preserves them. For epoch conversion, append `Z` in a custom helper **only
-if the source time convention is known to be UTC**:
-
-```python
-from crump.temporal import iso_to_epoch_ns
-
-
-def cdf_utc_to_epoch_ns(value: str) -> int:
-    return iso_to_epoch_ns(value + "Z")
-```
-
-Save this as `timestamp_helpers.py` on `PYTHONPATH`, set
-`function: timestamp_helpers.cdf_utc_to_epoch_ns`, and select the CDF timestamp
-column in `input_columns`. Do not assume a timezone for general CSV timestamps.
-
-## Upgrading from 0.7
-
-Version 0.8 adds `time`, `timetz`, `timestamptz` and `datetime_format`.
-Previously untyped mappings now infer temporal values automatically; other untyped
-values retain their existing TEXT storage. Compact date-like integers take precedence
-over integer inference in `prepare`. Use explicit types for identifiers.
-
-Numeric dates are now deterministic day-first/year-first, not PostgreSQL-dependent.
-SQLite temporal strings and configured extraction outputs are normalised to ISO.
-Offsets and sub-microsecond precision are no longer silently discarded or rounded.
-Review existing tables before changing configuration: Crump refuses incompatible
-naive/aware PostgreSQL temporal columns rather than silently converting them.
-Other existing column types are not automatically migrated to temporal types; create
-a new table or perform a deliberate migration after reviewing the data.

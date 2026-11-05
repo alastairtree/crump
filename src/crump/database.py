@@ -1886,7 +1886,7 @@ class DatabaseConnection:
         formats: set[str],
         source: str,
     ) -> None:
-        logging.getLogger("crump.temporal").info(
+        logger.info(
             "%s: automatically parsing %s -> %s as %s using %s "
             "(numeric dates are year-first or day-first, never month-first).",
             file_path.name,

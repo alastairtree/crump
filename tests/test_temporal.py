@@ -259,20 +259,24 @@ def test_yaml_round_trip(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(("value", "kind", "expected"), AUTOMATIC_CASES)
 def test_cli_stored_formats(
-    cli_runner: CliRunner, tmp_path: Path, db_url: str, value: str, kind: str, expected: str
+    cli_runner: CliRunner, tmp_path: Path, db_url: str, value: str, kind: str, expected: str, caplog
 ) -> None:
+    caplog.set_level(logging.INFO)
     config = write_job(tmp_path, {"value": "value"})
     source = write_values(tmp_path / "readings.csv", [value])
     preview = invoke_sync(cli_runner, source, config, db_url, dry=True)
     assert preview.exit_code == 0, preview.output
+    preview_messages = list(caplog.messages)
+    caplog.clear()
     with DatabaseConnection(db_url) as db:
         assert not db.table_exists("dates")
     result = invoke_sync(cli_runner, source, config, db_url)
     assert result.exit_code == 0, result.output
-    for output in (result.output, preview.output):
-        assert output.count("INFO:") == 1
-        assert f"as {kind} using" in output
-        assert parse_automatic(value).format in output
+    for messages in (caplog.messages, preview_messages):
+        parser_messages = [message for message in messages if "automatically parsing" in message]
+        assert len(parser_messages) == 1
+        assert f"as {kind} using" in parser_messages[0]
+        assert parse_automatic(value).format in parser_messages[0]
     stored = execute_query(db_url, "SELECT value FROM dates")[0][0]
     assert str(stored) == expected
     with DatabaseConnection(db_url) as db:
@@ -287,14 +291,19 @@ def test_cli_stored_formats(
     assert types["value"] == ("text" if db_url.startswith("sqlite") else expected_types[kind])
 
 
-def test_cli_mixed_formats_logged_once(cli_runner: CliRunner, tmp_path: Path, db_url: str) -> None:
+def test_cli_mixed_formats_logged_once(
+    cli_runner: CliRunner, tmp_path: Path, db_url: str, caplog
+) -> None:
+    caplog.set_level(logging.INFO)
     config = write_job(tmp_path, {"value": "value"})
     source = write_values(tmp_path / "readings.csv", ["29/02/2024", "Feb 29, 2024", "20240229"] * 3)
     for dry in (True, False, True, False):
+        caplog.clear()
         result = invoke_sync(cli_runner, source, config, db_url, dry)
         assert result.exit_code == 0, result.output
-        assert result.output.count("INFO:") == 1
-        assert all(fmt in result.output for fmt in ("%d/%m/%Y", "%b %d, %Y", "%Y%m%d"))
+        messages = [message for message in caplog.messages if "automatically parsing" in message]
+        assert len(messages) == 1
+        assert all(fmt in messages[0] for fmt in ("%d/%m/%Y", "%b %d, %Y", "%Y%m%d"))
     assert execute_query(db_url, "SELECT COUNT(*) FROM dates")[0][0] == 9
 
 
@@ -316,13 +325,14 @@ def test_cli_prepare_sync(cli_runner: CliRunner, tmp_path: Path, db_url: str) ->
 
 @pytest.mark.parametrize("kind", ["integer", "bigint", "text"])
 def test_cli_explicit_override(
-    cli_runner: CliRunner, tmp_path: Path, db_url: str, kind: str
+    cli_runner: CliRunner, tmp_path: Path, db_url: str, kind: str, caplog
 ) -> None:
+    caplog.set_level(logging.INFO)
     config = write_job(tmp_path, {"value": {"db_column": "value", "type": kind}})
     source = write_values(tmp_path / "readings.csv", ["20240229"])
     result = invoke_sync(cli_runner, source, config, db_url)
     assert result.exit_code == 0, result.output
-    assert "INFO:" not in result.output
+    assert not any("automatically parsing" in message for message in caplog.messages)
     assert str(execute_query(db_url, "SELECT value FROM dates")[0][0]) == "20240229"
 
 
@@ -362,7 +372,8 @@ def test_cli_validation_parity(
     assert "invalid temporal" in caplog.text
 
 
-def test_cli_explicit_format(cli_runner: CliRunner, tmp_path: Path, db_url: str) -> None:
+def test_cli_explicit_format(cli_runner: CliRunner, tmp_path: Path, db_url: str, caplog) -> None:
+    caplog.set_level(logging.INFO)
     config = write_job(
         tmp_path,
         {
@@ -377,7 +388,7 @@ def test_cli_explicit_format(cli_runner: CliRunner, tmp_path: Path, db_url: str)
     for dry in (True, False):
         result = invoke_sync(cli_runner, source, config, db_url, dry)
         assert result.exit_code == 0, result.output
-        assert "INFO:" not in result.output
+        assert not any("automatically parsing" in message for message in caplog.messages)
     assert str(execute_query(db_url, "SELECT value FROM dates")[0][0]) == "2024-12-31 14:30:00"
 
 
@@ -481,18 +492,22 @@ def test_cli_existing_timezone_mismatch(cli_runner: CliRunner, tmp_path: Path, d
 
 @pytest.mark.parametrize("value", ["12/31/2024", "12/31/2024 2:30 PM"])
 def test_cli_never_infers_numeric_us(
-    cli_runner: CliRunner, tmp_path: Path, db_url: str, value: str
+    cli_runner: CliRunner, tmp_path: Path, db_url: str, value: str, caplog
 ) -> None:
+    caplog.set_level(logging.INFO)
     config = write_job(tmp_path, {"value": "value"})
     source = write_values(tmp_path / "readings.csv", [value])
     for dry in (True, False):
         result = invoke_sync(cli_runner, source, config, db_url, dry)
         assert result.exit_code == 0, result.output
-        assert "INFO:" not in result.output
+        assert not any("automatically parsing" in message for message in caplog.messages)
     assert execute_query(db_url, "SELECT value FROM dates")[0][0] == value
 
 
-def test_cli_compact_checks_after_1000(cli_runner: CliRunner, tmp_path: Path, db_url: str) -> None:
+def test_cli_compact_checks_after_1000(
+    cli_runner: CliRunner, tmp_path: Path, db_url: str, caplog
+) -> None:
+    caplog.set_level(logging.INFO)
     source = write_values(tmp_path / "readings.csv", ["20240229"] * 1001 + ["21000101"])
     config = tmp_path / "prepared.yml"
     result = cli_runner.invoke(main, ["prepare", str(source), "-c", str(config)])
@@ -501,24 +516,29 @@ def test_cli_compact_checks_after_1000(cli_runner: CliRunner, tmp_path: Path, db
     config = write_job(tmp_path, {"value": "value"})
     result = invoke_sync(cli_runner, source, config, db_url)
     assert result.exit_code == 0, result.output
-    assert "INFO:" not in result.output
+    assert not any("automatically parsing" in message for message in caplog.messages)
     assert execute_query(db_url, "SELECT value FROM dates WHERE id = 1002")[0][0] == "21000101"
 
 
 def test_cli_logger_lifetime_and_file_scope(
-    cli_runner: CliRunner, tmp_path: Path, db_url: str
+    cli_runner: CliRunner, tmp_path: Path, db_url: str, caplog
 ) -> None:
+    caplog.set_level(logging.INFO)
     config = write_job(tmp_path, {"value": "value"})
-    logger = logging.getLogger("crump.temporal")
+    logger = logging.getLogger("crump.database")
     handlers, level = list(logger.handlers), logger.level
     propagate = logger.propagate
     for name in ("first.csv", "second.csv"):
         source = write_values(tmp_path / name, ["29/02/2024"] * 4)
         for dry in (True, False):
+            caplog.clear()
             result = invoke_sync(cli_runner, source, config, db_url, dry)
             assert result.exit_code == 0, result.output
-            assert result.output.count("INFO:") == 1
-            assert f"INFO: {name}:" in result.output
+            messages = [
+                message for message in caplog.messages if "automatically parsing" in message
+            ]
+            assert len(messages) == 1
+            assert messages[0].startswith(f"{name}:")
             assert logger.handlers == handlers
             assert logger.level == level
             assert logger.propagate == propagate
@@ -588,7 +608,7 @@ def test_documented_nanosecond_helpers(tmp_path: Path, monkeypatch) -> None:
         for block in extract_code_blocks(doc.read_text())
         if block["language"] == "python"
     ]
-    assert len(python_blocks) == 2
+    assert len(python_blocks) == 1
     module = tmp_path / "timestamp_helpers.py"
     module.write_text(python_blocks[0])
     monkeypatch.syspath_prepend(str(tmp_path))
@@ -642,13 +662,6 @@ def test_documented_yaml_examples(cli_runner: CliRunner, tmp_path: Path, db_url:
             "2024-12-31 14:30:00",
         ),
         (
-            "readings_20240229.csv",
-            "id,captured_at\n1,2024|02|29 14h30m45s\n",
-            "daily_readings",
-            "file_date",
-            "2024-02-29",
-        ),
-        (
             "text.csv",
             "id,observed_at\n1,2024-02-29T14:30:45.123456789Z\n",
             "precise_text",
@@ -683,29 +696,18 @@ def test_documented_yaml_examples(cli_runner: CliRunner, tmp_path: Path, db_url:
             assert result.exit_code == 0, result.output
         rows = execute_query(db_url, f"SELECT {column} FROM {table} ORDER BY id")
         assert str(rows[0][0]) == expected
-    sql_blocks = [
-        block["content"]
-        for block in extract_code_blocks(doc.read_text())
-        if block["language"] == "sql"
-    ]
-    queries = sql_blocks[0].split(";")
-    assert [row[0] for row in execute_query(db_url, queries[0])] == [-1, 0, 1]
-    assert [row[0] for row in execute_query(db_url, queries[1])] == [0, 1]
 
 
 def test_cdf_nanoseconds_preserved(
     cli_runner: CliRunner, tmp_path: Path, db_url: str, monkeypatch
 ) -> None:
     from crump.cdf_reader import read_cdf_variables
-    from tests.test_docs_examples import extract_code_blocks
 
-    doc = Path(__file__).parent.parent / "docs" / "date-and-time.md"
-    helper = [
-        block["content"]
-        for block in extract_code_blocks(doc.read_text())
-        if block["language"] == "python"
-    ][-1]
-    (tmp_path / "cdf_timestamp_helpers.py").write_text(helper)
+    (tmp_path / "cdf_timestamp_helpers.py").write_text(
+        "from crump.temporal import iso_to_epoch_ns\n\n"
+        "def cdf_utc_to_epoch_ns(value):\n"
+        "    return iso_to_epoch_ns(value + 'Z')\n"
+    )
     monkeypatch.syspath_prepend(str(tmp_path))
     variables = read_cdf_variables(Path("tests/data/imap_mag_l1c_norm-magi_20251010_v001.cdf"))
     epoch = next(var for var in variables if var.name == "epoch")
@@ -732,8 +734,9 @@ def test_cdf_nanoseconds_preserved(
 
 
 def test_computed_temporal_executes_once(
-    cli_runner: CliRunner, tmp_path: Path, db_url: str, monkeypatch
+    cli_runner: CliRunner, tmp_path: Path, db_url: str, monkeypatch, caplog
 ) -> None:
+    caplog.set_level(logging.INFO)
     calls = []
 
     def calculate(mapping, row):
@@ -755,10 +758,12 @@ def test_computed_temporal_executes_once(
     values = ["2024-02-29T12:30:00", "29 Feb 2024 12:31:00"]
     source = write_values(tmp_path / "readings.csv", values)
     for dry in (True, False):
+        caplog.clear()
         calls.clear()
         result = invoke_sync(cli_runner, source, config, db_url, dry)
         assert result.exit_code == 0, result.output
         assert calls == values
-        assert result.output.count("INFO:") == 1
-        assert "%Y-%m-%dT%H:%M:%S" in result.output
-        assert "%d %b %Y %H:%M:%S" in result.output
+        messages = [message for message in caplog.messages if "automatically parsing" in message]
+        assert len(messages) == 1
+        assert "%Y-%m-%dT%H:%M:%S" in messages[0]
+        assert "%d %b %Y %H:%M:%S" in messages[0]
