@@ -233,6 +233,89 @@ id_col = suggest_id_column(columns)
 print(f"Suggested ID: {id_col}")  # Output: name (first column)
 ```
 
+## CDF Reading Functions
+
+Read CDF science files programmatically, with the same model used by `crump extract`:
+variables are grouped into tables by record count, 2-D variables expand to one column
+per element (named from label metadata) and epoch variables become `datetime64` values.
+
+### read_cdf_variables
+
+```python
+def read_cdf_variables(
+    file_path: Path,
+    max_records: int | None = None,
+    skipped: list[str] | None = None,
+) -> list[CDFVariable]
+```
+
+Reads the variables of a CDF file, sorted by record count (largest first).
+
+**Parameters**:
+
+- `file_path`: Path to the CDF file
+- `max_records`: Read at most this many records (from the start) of each record-varying
+  variable. `None` (default) reads everything. Must be at least 1.
+- `skipped`: Optional list that is extended with the names of variables that could not be
+  read (this includes variables with zero records). They are always left out of the result.
+
+**Bounded-read guarantee**: with `max_records`, no variable has more than `max_records`
+records read from disk (`cdflib.CDF.varget` is called with `startrec=0, endrec=max_records - 1`).
+`CDFVariable.num_records` is still the variable's *true* record count in the file, while
+`data`, `shape`, `dtype`, `is_array` and `array_size` describe the data actually held.
+Non-record-varying variables hold their single value. Data types are preserved (a `float32`
+variable stays `float32`).
+
+### group_variables_by_record_count
+
+```python
+def group_variables_by_record_count(
+    variables: list[CDFVariable],
+) -> dict[int, list[CDFVariable]]
+```
+
+Groups variables into tables by record count, largest first. Non-record-varying variables
+(one value) form their own group under key `1`.
+
+### read_cdf_global_attributes
+
+```python
+def read_cdf_global_attributes(file_path: Path) -> dict[str, Any]
+```
+
+Returns the global attributes of a CDF file (a wrapper around `cdflib.CDF.globalattsget()`).
+
+### Example: previewing a large CDF file
+
+Show the global attributes and the first 100 records of each table without loading the
+whole file:
+
+```python
+from pathlib import Path
+
+from crump import (
+    group_variables_by_record_count,
+    read_cdf_global_attributes,
+    read_cdf_variables,
+)
+
+path = Path("large_science_file.cdf")
+
+attributes = read_cdf_global_attributes(path)
+print(attributes.get("Project"))
+
+skipped: list[str] = []
+variables = read_cdf_variables(path, max_records=100, skipped=skipped)
+
+for record_count, table in group_variables_by_record_count(variables).items():
+    print(f"Table with {record_count} records: {[v.name for v in table]}")
+    for var in table:
+        print(var.name, var.dtype, var.shape)  # shape covers at most 100 records
+
+if skipped:
+    print("Could not read:", skipped)
+```
+
 ## Configuration Classes
 
 ### CrumpConfig
