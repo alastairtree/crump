@@ -42,6 +42,13 @@ columns:
   email: email_address # CSV: email → DB: email_address
 ```
 
+### Previewing Large CDF Files from Python
+
+`read_cdf_variables(path, max_records=100)` reads only the first records of each variable
+while still reporting each variable's true record count, `group_variables_by_record_count`
+groups the variables into tables, and `read_cdf_global_attributes` returns the file's global
+attributes. See the [API reference](api-reference.md#example-previewing-a-large-cdf-file).
+
 ### Use Cases
 
 - **Database conventions**: Map to snake_case or camelCase

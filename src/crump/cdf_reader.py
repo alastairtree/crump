@@ -201,25 +201,82 @@ def _convert_epoch_to_datetime(data: np.ndarray) -> np.ndarray:
         return data
 
 
-def read_cdf_variables(file_path: Path) -> list[CDFVariable]:
-    """Read all variables from a CDF file.
-
-    Args:
-        file_path: Path to the CDF file
-
-    Returns:
-        List of CDFVariable objects sorted by record count (descending)
-
-    Raises:
-        ImportError: If cdflib is not installed
-        Exception: If the file cannot be read
-    """
+def _import_cdflib() -> Any:
+    """Import cdflib, raising a helpful error if it is missing."""
     try:
         import cdflib
     except ImportError as e:
         raise ImportError(
             "cdflib is required for CDF operations. Install with: pip install cdflib"
         ) from e
+    return cdflib
+
+
+def _read_variable_data(
+    cdf: Any, var_name: str, var_info: Any, max_records: int | None
+) -> tuple[np.ndarray | Any, int | None]:
+    """Read a variable's data, never reading more than ``max_records`` records.
+
+    Args:
+        cdf: Open ``cdflib.CDF`` object
+        var_name: Name of the variable to read
+        var_info: Result of ``cdf.varinq`` for the variable (or None if unavailable)
+        max_records: Maximum number of records to read, or None to read everything
+
+    Returns:
+        Tuple of (data, true_total_records). ``true_total_records`` is None when it
+        should be derived from the data itself (unbounded read, non-record-varying
+        variable, or no variable info available).
+    """
+    if max_records is None:
+        return cdf.varget(var_name), None
+
+    if var_info is not None and not getattr(var_info, "Rec_Vary", True):
+        # Non-record-varying variables hold a single value
+        return cdf.varget(var_name), None
+
+    total: int | None = None
+    if var_info is not None and hasattr(var_info, "Last_Rec"):
+        total = int(var_info.Last_Rec) + 1
+
+    if total is not None and total <= 0:
+        # Zero records: cdflib raises, so let the caller report it as unreadable
+        raise ValueError(f"No records found for variable {var_name}")
+
+    end = max_records if total is None else min(max_records, total)
+    return cdf.varget(var_name, startrec=0, endrec=end - 1), total
+
+
+def read_cdf_variables(
+    file_path: Path,
+    max_records: int | None = None,
+    skipped: list[str] | None = None,
+) -> list[CDFVariable]:
+    """Read variables from a CDF file.
+
+    Args:
+        file_path: Path to the CDF file
+        max_records: If given, read at most this many records (from the start) of each
+            record-varying variable. ``CDFVariable.num_records`` still reports the
+            variable's true total record count in the file, while ``data``, ``shape``
+            and ``dtype`` describe only the records actually read. Non-record-varying
+            variables always hold their single value. None reads everything.
+        skipped: Optional list that is extended in place with the names of variables
+            that could not be read (including variables with zero records). Such
+            variables are always left out of the result.
+
+    Returns:
+        List of CDFVariable objects sorted by record count (descending)
+
+    Raises:
+        ImportError: If cdflib is not installed
+        ValueError: If ``max_records`` is less than 1
+        Exception: If the file cannot be read
+    """
+    if max_records is not None and max_records < 1:
+        raise ValueError("max_records must be at least 1")
+
+    cdflib = _import_cdflib()
 
     variables = []
 
@@ -229,13 +286,13 @@ def read_cdf_variables(file_path: Path) -> list[CDFVariable]:
 
         for var_name in all_vars:
             try:
-                data = cdf.varget(var_name)
-
-                # Get variable info to check for EPOCH type
+                # Get variable info to check for EPOCH type and true record count
                 try:
                     var_info = cdf.varinq(var_name)
                 except Exception:
                     var_info = None
+
+                data, total_records = _read_variable_data(cdf, var_name, var_info, max_records)
 
                 # Convert EPOCH variables to datetime
                 if (
@@ -254,6 +311,8 @@ def read_cdf_variables(file_path: Path) -> list[CDFVariable]:
                     num_records = 1
                     shape = ()
                     dtype = type(data).__name__
+                if total_records is not None:
+                    num_records = total_records
 
                 # Get variable attributes
                 try:
@@ -273,12 +332,56 @@ def read_cdf_variables(file_path: Path) -> list[CDFVariable]:
                 )
             except Exception:
                 # Skip variables that can't be read
+                if skipped is not None:
+                    skipped.append(var_name)
                 continue
 
     # Sort by number of records (descending)
     variables.sort(key=lambda v: v.num_records, reverse=True)
 
     return variables
+
+
+def group_variables_by_record_count(
+    variables: list[CDFVariable],
+) -> dict[int, list[CDFVariable]]:
+    """Group variables into tables by their record count.
+
+    Variables that share a record count belong to the same table. Non-record-varying
+    variables (a single value) therefore form their own group under key 1.
+
+    Args:
+        variables: List of CDFVariable objects
+
+    Returns:
+        Dictionary mapping record count to the variables with that count, ordered by
+        record count (largest first). Variable order within a group is preserved.
+    """
+    groups: dict[int, list[CDFVariable]] = {}
+
+    for var in variables:
+        groups.setdefault(var.num_records, []).append(var)
+
+    return dict(sorted(groups.items(), key=lambda item: -item[0]))
+
+
+def read_cdf_global_attributes(file_path: Path) -> dict[str, Any]:
+    """Read the global attributes of a CDF file.
+
+    Args:
+        file_path: Path to the CDF file
+
+    Returns:
+        Dictionary mapping global attribute name to its value(s)
+
+    Raises:
+        ImportError: If cdflib is not installed
+        Exception: If the file cannot be read
+    """
+    cdflib = _import_cdflib()
+
+    with cdflib.CDF(str(file_path)) as cdf:
+        return dict(cdf.globalattsget())
 
 
 def get_column_names_for_variable(variable: CDFVariable, cdf_file_path: Path) -> list[str]:
