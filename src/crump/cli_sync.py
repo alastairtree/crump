@@ -79,7 +79,7 @@ def _extract_cdf_and_find_tabular_files(
     "--db-url",
     envvar="DATABASE_URL",
     required=True,
-    help="PostgreSQL connection string (or set DATABASE_URL env var)",
+    help="Database URL or PostgreSQL libpq keyword/value string (or set DATABASE_URL env var)",
 )
 @click.option(
     "--dry-run",

@@ -470,13 +470,46 @@ crump extract *.cdf --config crump_config.yml --job my_job -o output/
 
 ## Connection String Format
 
-The `--db-url` option accepts standard PostgreSQL connection strings:
+The `--db-url` option and `DATABASE_URL` environment variable accept PostgreSQL URLs,
+SQLAlchemy-style driver-qualified URLs, and native libpq keyword/value connection strings.
+The same formats work with the Python API and with `--dry-run`.
 
 ### Basic Format
 
 ```
 postgresql://[user[:password]@][host][:port][/dbname]
 ```
+
+The shorter `postgres://` prefix is also supported. Driver-qualified prefixes such as
+`postgresql+psycopg://`, `postgresql+psycopg2://`, `postgresql+asyncpg://`, and
+`postgresql+pg8000://` are accepted without installing another driver: crump always connects
+using psycopg 3 (not psycopg2). Only the driver suffix is removed; credentials, percent-encoding, host lists,
+database names, and connection options such as `sslmode` are preserved.
+
+For example, both commands connect in the same way:
+
+```bash
+crump sync data.csv -c crump_config.yml --db-url "postgresql://localhost/mydb"
+crump sync data.csv -c crump_config.yml --db-url "postgresql+psycopg://localhost/mydb"
+```
+
+### Native libpq connection strings
+
+Keyword/value strings support the usual libpq options, including Unix sockets, multiple
+hosts, and named services configured in `pg_service.conf`. Quote the whole string when
+passing it on the command line:
+
+```bash
+crump sync data.csv -c crump_config.yml --db-url "host=localhost port=5432 dbname=mydb user=myuser"
+crump sync data.csv -c crump_config.yml --db-url "host=/var/run/postgresql dbname=mydb"
+crump sync data.csv -c crump_config.yml --db-url "service=myservice"
+```
+
+Unspecified connection settings use libpq defaults, including environment variables such
+as `PGHOST`, `PGPORT`, `PGDATABASE`, and `PGUSER`. Use a PostgreSQL password file (`.pgpass`)
+or another supported authentication mechanism rather than committing credentials to
+configuration files. A connection string is still required through `--db-url` or `DATABASE_URL`.
+Invalid options and authentication or connection failures are reported by psycopg as usual.
 
 ### Examples
 
