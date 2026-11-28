@@ -2079,6 +2079,26 @@ class DatabaseConnection:
         raw = {col.db_column: filename_values.get(name) for name, col in checked.items()}
         problems: dict[str, int] = {}
         validated = self._validate_and_fix_row(dict(raw), [], strict_job, {}, problems)
+        if validated is not None:
+            # Row validation leaves malformed numbers for the database to reject, which
+            # would only happen after schema changes (or never, in SQLite).
+            for col in checked.values():
+                numeric = (
+                    int
+                    if self._get_integer_range(col.data_type)
+                    else float
+                    if (col.data_type or "").lower().strip() in ("float", "double")
+                    else None
+                )
+                value = validated.get(col.db_column)
+                if numeric is None or value is None:
+                    continue
+                try:
+                    numeric(str(value).strip())
+                except ValueError:
+                    problems[f"skip:invalid_{numeric.__name__}:{col.db_column}"] = 1
+                    validated = None
+                    break
         if validated is None or any(validated.get(col) is None for col in raw):
             details = ", ".join(key.removeprefix("skip:") for key in problems) or "empty value"
             kind = "cleanup" if cleanup else "ID"

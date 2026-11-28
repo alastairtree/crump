@@ -1123,3 +1123,41 @@ def test_cli_legacy_text_filename_key(cli_runner: CliRunner, tmp_path: Path, db_
         assert "not in canonical date form" in " ".join(result.output.split())
     rows = execute_query(db_url, "SELECT id, day, value FROM dates")
     assert [tuple(row) for row in rows] == [(1, "20240115", "old")]
+
+
+@pytest.mark.parametrize(("kind", "capture"), [("integer", "abc"), ("float", "1.2.3")])
+def test_cli_malformed_numeric_filename_key_stops_before_writing(
+    cli_runner: CliRunner, tmp_path: Path, db_url: str, kind: str, capture: str
+) -> None:
+    """A filename key that is not a number must fail before any schema change."""
+    config = _filename_key_job(tmp_path, {"type": kind})
+    source = _write_readings(tmp_path, capture, [1])
+    for dry in (True, False):
+        result = invoke_sync(cli_runner, source, config, db_url, dry)
+        assert result.exit_code != 0
+        output = " ".join(result.output.split())
+        assert "Filename ID values" in output
+        assert f"invalid_{'int' if kind == 'integer' else 'float'}:day" in output
+    with DatabaseConnection(db_url) as db:
+        assert not db.table_exists("dates")
+
+
+def test_cli_malformed_integer_cleanup_value_stops_before_writing(
+    cli_runner: CliRunner, tmp_path: Path, db_url: str
+) -> None:
+    """A malformed integer cleanup value must not reach the delete filter."""
+    config = write_job(
+        tmp_path,
+        {"value": "value"},
+        filename_to_column={
+            "template": "readings_[batch].csv",
+            "columns": {"batch": {"type": "integer", "use_to_delete_old_rows": True}},
+        },
+    )
+    source = write_values(tmp_path / "readings_abc.csv", ["one"])
+    for dry in (True, False):
+        result = invoke_sync(cli_runner, source, config, db_url, dry)
+        assert result.exit_code != 0
+        assert "Filename cleanup values" in " ".join(result.output.split())
+    with DatabaseConnection(db_url) as db:
+        assert not db.table_exists("dates")
