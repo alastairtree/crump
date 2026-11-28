@@ -38,10 +38,13 @@ jobs:
             path.write_text("sale_id,value\n1,original\n2,stale\n3,keep\n")
             assert sync_file_to_db(path, job, db_url) == 3
 
+        # An empty file never deletes, so a truncated input cannot wipe existing rows.
         first.write_text("sale_id,value\n")
         assert sync_file_to_db_dry_run(first, job, db_url).rows_to_delete == 0
         assert sync_file_to_db(first, job, db_url) == 0
 
+        # Cleanup matches region and every filename key (shop 01, 2024-01-15), so only
+        # sale 2 of this file is deleted; other shops and dates in "east" are kept.
         first.write_text("sale_id,value\n1,corrected\n3,keep\n")
         summary = sync_file_to_db_dry_run(first, job, db_url)
         assert (summary.rows_to_sync, summary.rows_to_delete) == (2, 1)

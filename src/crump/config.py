@@ -796,15 +796,14 @@ class CrumpConfig:
                     f"Job '{name}' filename_to_column cannot have both 'template' and 'regex'"
                 )
 
-            # Parse columns
-            if "columns" not in ftc_data or not ftc_data["columns"]:
-                raise ValueError(f"Job '{name}' filename_to_column must have 'columns'")
-
-            if not isinstance(ftc_data["columns"], dict):
+            # Parse columns. They may be omitted when every capture is only used as a
+            # filename ID; such captures are declared from id_mapping below.
+            ftc_columns_data = ftc_data.get("columns") or {}
+            if not isinstance(ftc_columns_data, dict):
                 raise ValueError(f"Job '{name}' filename_to_column columns must be a dictionary")
 
             ftc_columns = {}
-            for col_name, col_data in ftc_data["columns"].items():
+            for col_name, col_data in ftc_columns_data.items():
                 if isinstance(col_data, dict):
                     db_column = col_data.get("db_column")
                     data_type = col_data.get("type")
@@ -843,11 +842,21 @@ class CrumpConfig:
                         f"Job '{name}' ID '{source_name}' must use only 'source: filename' "
                         "to reference a filename column"
                     )
-                if not filename_to_column or source_name not in filename_to_column.columns:
+                if not filename_to_column or (
+                    source_name not in filename_to_column.columns
+                    and not filename_to_column.has_capture(source_name)
+                ):
                     raise ValueError(f"Job '{name}' references unknown filename ID '{source_name}'")
-                id_mapping.append(filename_to_column.columns[source_name])
+                # A capture used only as a key needs no entry under filename_to_column.columns
+                key = filename_to_column.columns.setdefault(
+                    source_name, FilenameColumnMapping(name=source_name)
+                )
+                id_mapping.append(key)
             else:
                 id_mapping.append(CrumpConfig._parse_column_mapping(source_name, value, name))
+
+        if filename_to_column and not filename_to_column.columns:
+            raise ValueError(f"Job '{name}' filename_to_column must have 'columns'")
 
         # Parse optional indexes
         indexes = []
@@ -1038,6 +1047,7 @@ class CrumpConfig:
                     ftc_dict["regex"] = job.filename_to_column.regex
 
                 ftc_columns_dict: dict[str, Any] = {}
+                filename_keys = job.filename_key_columns
                 for col_name, col_mapping in job.filename_to_column.columns.items():
                     col_dict: dict[str, Any] = {}
                     if col_mapping.db_column != col_mapping.name:
@@ -1049,10 +1059,14 @@ class CrumpConfig:
                     if col_mapping.use_to_delete_old_rows:
                         col_dict["use_to_delete_old_rows"] = True
 
+                    # A key with default settings needs no entry: id_mapping declares it
+                    if not col_dict and col_mapping in filename_keys:
+                        continue
                     # If col_dict is empty, use None to keep it minimal
                     ftc_columns_dict[col_name] = col_dict if col_dict else None
 
-                ftc_dict["columns"] = ftc_columns_dict
+                if ftc_columns_dict:
+                    ftc_dict["columns"] = ftc_columns_dict
                 job_dict["filename_to_column"] = ftc_dict
 
             # Add indexes if present

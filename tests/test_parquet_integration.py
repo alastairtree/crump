@@ -22,8 +22,6 @@ jobs:
       day: {source: filename}
     filename_to_column:
       template: 'sales_[day].parquet'
-      columns:
-        day: null
 """)
         job = CrumpConfig.from_yaml(config_file).jobs["sales"]
         for day in ("Monday", "Tuesday"):

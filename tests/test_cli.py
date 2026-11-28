@@ -56,8 +56,6 @@ jobs:
       day: {{source: filename}}
     filename_to_column:
       regex: '{pattern}'
-      columns:
-        day: null
 """)
         args = [
             "sync",
