@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import csv
+import os
+import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,6 +21,7 @@ from crump.cdf_reader import (
 from crump.config import CrumpJob, apply_row_transformations
 from crump.file_types import ParquetCompression
 from crump.tabular_file import create_writer
+from crump.temporal import InvalidTemporalValueError
 
 
 @dataclass
@@ -436,6 +439,8 @@ def extract_cdf_with_config(
 
     Raises:
         ValueError: If CDF extraction fails completely or append header mismatch
+        InvalidTemporalValueError: If a value cannot be parsed as its configured date/time
+            type. No partial output is left behind and an appended file is unchanged.
         FileNotFoundError: If CDF file doesn't exist
         FileExistsError: If output file exists and append is False
     """
@@ -484,6 +489,9 @@ def extract_cdf_with_config(
                 if result:
                     results.append(result)
 
+            except InvalidTemporalValueError:
+                # Bad data, not a mapping mismatch: report it rather than skip the group
+                raise
             except ValueError:
                 # This file doesn't match the column mappings - skip it silently
                 # This is expected when a CDF has multiple variable groups
@@ -645,27 +653,59 @@ def _transform_tabular_file_with_config(
 
         # Write using tabular file writer (format auto-detected from extension)
         write_append = append and output_path.exists()
-        with create_writer(
-            output_path, append=write_append, compression=parquet_compression
-        ) as writer:
-            # Write header only if not appending
-            if not write_append:
-                writer.writerow(output_columns)
-
-            for row in reader:
-                # Apply column transformations
-                output_row = apply_row_transformations(
-                    row, sync_columns, job.filename_to_column, filename_values
+        # Keep a copy of an existing file so a failure part-way leaves it unchanged. It sits
+        # beside the output so restoring it is an atomic same-filesystem rename.
+        backup = output_path.with_name(output_path.name + ".crump-backup") if write_append else None
+        if backup is not None:
+            if backup.exists():
+                # A backup left by an earlier failed restore may be the only intact original.
+                raise FileExistsError(
+                    f"Cannot append to {output_path}: recovery backup {backup} already exists "
+                    f"from an earlier failed append. Restore or remove it first."
                 )
+            shutil.copy2(output_path, backup)
+        try:
+            with create_writer(
+                output_path, append=write_append, compression=parquet_compression
+            ) as writer:
+                # Write header only if not appending
+                if not write_append:
+                    writer.writerow(output_columns)
 
-                # Skip row if completely empty (all transformations produced None/empty)
-                if not any(output_row.values()):
-                    continue
+                for row_number, row in enumerate(reader, 1):
+                    # Apply column transformations
+                    try:
+                        output_row = apply_row_transformations(
+                            row, sync_columns, job.filename_to_column, filename_values
+                        )
+                    except InvalidTemporalValueError as exc:
+                        raise InvalidTemporalValueError(
+                            f"{cdf_file_path.name}, row {row_number}: {exc}"
+                        ) from exc
 
-                # Convert dict to list in column order
-                row_list = [output_row.get(col, "") for col in output_columns]
-                writer.writerow(row_list)
-                rows_written += 1
+                    # Skip row if completely empty (all transformations produced None/empty)
+                    if not any(output_row.values()):
+                        continue
+
+                    # Convert dict to list in column order
+                    row_list = [output_row.get(col, "") for col in output_columns]
+                    writer.writerow(row_list)
+                    rows_written += 1
+        except BaseException:
+            if backup is None:
+                output_path.unlink(missing_ok=True)
+                raise
+            try:
+                os.replace(backup, output_path)
+            except OSError as restore_error:
+                # Keep the backup: it is the only intact copy of the original file.
+                raise OSError(
+                    f"Could not restore {output_path} after a failed append; "
+                    f"its original contents are kept in {backup}"
+                ) from restore_error
+            raise
+        if backup is not None:
+            backup.unlink(missing_ok=True)
 
         # Only return result if we wrote at least one row
         if rows_written == 0 and not write_append:

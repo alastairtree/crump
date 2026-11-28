@@ -2,6 +2,10 @@
 
 Detailed documentation of all crump features.
 
+## Dates and Times
+
+Crump handles a wide variety of date and time formats and will detect most dates and times automatically. See [Dates and Times](date-and-time.md) for more details.
+
 ## Idempotent Operations
 
 Running sync multiple times is safe - it uses PostgreSQL's `INSERT ... ON CONFLICT DO UPDATE` (upsert).
@@ -451,7 +455,8 @@ crump sync data.csv --config crump_config.yml --job my_job
 
 ## Type Detection
 
-Automatically detects column types from CSV data.
+Automatically detects column types from CSV data. Explicit types override detection.
+Crump handles a wide variety of date and time formats and will detect most dates and times automatically. See [Dates and Times](date-and-time.md) for more details.
 
 ### Supported Types
 
@@ -461,7 +466,7 @@ Automatically detects column types from CSV data.
 | BIGINT | `815230591184000000`, `9223372036854775807` | Large integers exceeding INTEGER range |
 | FLOAT | `3.14`, `-0.5`, `1.23e-4` | Floating point numbers |
 | BOOLEAN | `true`, `false`, `yes`, `no`, `y`, `n`, `active`, `inactive`, `enabled`, `disabled` | Boolean values (case-insensitive) |
-| DATE | `2024-01-15`, `2024-12-31` | Date values |
+| DATE, TIME, DATETIME, TIMESTAMPTZ, TIMETZ | `2024-01-15`, `14:30`, `2024-01-15T14:30:45Z` | See [Dates and Times](date-and-time.md) |
 | TEXT | `Alice`, `alice@example.com` | Text strings |
 
 ### Nullable Detection

@@ -1,5 +1,7 @@
 """Command-line interface for crump."""
 
+import logging
+
 import click
 
 from crump import __version__
@@ -18,6 +20,7 @@ def main(ctx: click.Context) -> None:
     This application provides tools for syncing scientific data files
     into a database (PostgreSQL or SQLite) for analysis and storage.
     """
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     ctx.ensure_object(dict)
 
 

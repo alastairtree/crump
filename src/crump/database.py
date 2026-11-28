@@ -7,14 +7,30 @@ import logging
 import re
 import sqlite3
 from collections import defaultdict
+from collections.abc import Iterator
+from copy import copy
+from itertools import islice
 from pathlib import Path
 from typing import Any, Protocol
 
 import psycopg
 from psycopg import sql
 
-from crump.config import ColumnMapping, CrumpJob, FailureMode, apply_row_transformations
+from crump.config import (
+    ColumnMapping,
+    CrumpJob,
+    FailureMode,
+    FilenameColumnMapping,
+    apply_row_transformations,
+)
 from crump.tabular_file import create_reader
+from crump.temporal import (
+    CANONICAL_PATTERNS,
+    TemporalInference,
+    is_temporal,
+    parse_automatic,
+    parse_temporal,
+)
 
 
 def _detect_file_format(file_path: Path) -> Any:
@@ -59,6 +75,46 @@ class DryRunSummary:
         self.new_indexes: list[str] = []
         self.rows_to_sync: int = 0
         self.rows_to_delete: int = 0
+
+
+_POSTGRES_TEMPORAL_TYPES = frozenset(
+    {
+        "date",
+        "time without time zone",
+        "time with time zone",
+        "timestamp without time zone",
+        "timestamp with time zone",
+    }
+)
+
+
+def _filter_values(value: Any) -> list[Any]:
+    """A tuple filter value means any of its values may match."""
+    return list(value) if isinstance(value, tuple) else [value]
+
+
+def _postgres_filter(filter_columns: dict[str, Any]) -> tuple[list[sql.Composable], list[Any]]:
+    conditions: list[sql.Composable] = []
+    params: list[Any] = []
+    for col, value in filter_columns.items():
+        values = _filter_values(value)
+        conditions.append(
+            sql.SQL("{} IN ({})").format(
+                sql.Identifier(col), sql.SQL(", ").join(sql.Placeholder() * len(values))
+            )
+        )
+        params.extend(values)
+    return conditions, params
+
+
+def _sqlite_filter(filter_columns: dict[str, Any]) -> tuple[list[str], list[Any]]:
+    conditions: list[str] = []
+    params: list[Any] = []
+    for col, value in filter_columns.items():
+        values = _filter_values(value)
+        conditions.append(f'"{col}" IN ({", ".join("?" * len(values))})')
+        params.extend(values)
+    return conditions, params
 
 
 class DatabaseBackend(Protocol):
@@ -123,7 +179,7 @@ class DatabaseBackend(Protocol):
         self,
         table_name: str,
         id_columns: list[str],
-        filter_columns: dict[str, str],
+        filter_columns: dict[str, Any],
         current_ids: set[tuple],
     ) -> int:
         """Delete records from database that aren't in current CSV using compound filter key."""
@@ -133,7 +189,7 @@ class DatabaseBackend(Protocol):
         self,
         table_name: str,
         id_columns: list[str],
-        filter_columns: dict[str, str],
+        filter_columns: dict[str, Any],
         current_ids: set[tuple],
     ) -> int:
         """Count records that would be deleted using compound filter key."""
@@ -222,6 +278,9 @@ class PostgreSQLBackend:
             "date": "DATE",
             "datetime": "TIMESTAMP",
             "timestamp": "TIMESTAMP",
+            "time": "TIME",
+            "timetz": "TIME WITH TIME ZONE",
+            "timestamptz": "TIMESTAMP WITH TIME ZONE",
             "boolean": "BOOLEAN",
             "bool": "BOOLEAN",
             "text": "TEXT",
@@ -336,7 +395,7 @@ class PostgreSQLBackend:
         self,
         table_name: str,
         id_columns: list[str],
-        filter_columns: dict[str, str],
+        filter_columns: dict[str, Any],
         current_ids: set[tuple],
     ) -> int:
         """Count records that would be deleted using compound filter key.
@@ -354,9 +413,7 @@ class PostgreSQLBackend:
             return 0
 
         # Build WHERE clause: WHERE col1 = ? AND col2 = ? AND (id1, id2) NOT IN (...)
-        filter_conditions = [
-            sql.SQL("{} = %s").format(sql.Identifier(col)) for col in filter_columns
-        ]
+        filter_conditions, filter_params = _postgres_filter(filter_columns)
 
         if len(id_columns) == 1:
             # Single key - simpler query
@@ -369,7 +426,7 @@ class PostgreSQLBackend:
                 sql.Identifier(id_columns[0]),
                 sql.SQL(", ").join(sql.Placeholder() * len(current_ids_list)),
             )
-            params = tuple(list(filter_columns.values()) + current_ids_list)
+            params = tuple(filter_params + current_ids_list)
         else:
             # Compound key - use row value constructor
             id_cols_sql = sql.SQL("({})").format(
@@ -387,7 +444,7 @@ class PostgreSQLBackend:
             )
             # Flatten the list of tuples for params
             id_params = [val for id_tuple in current_ids for val in id_tuple]
-            params = tuple(list(filter_columns.values()) + id_params)
+            params = tuple(filter_params + id_params)
 
         count_result = self.fetchall(count_query.as_string(self.conn), params)
         return count_result[0][0] if count_result else 0
@@ -396,7 +453,7 @@ class PostgreSQLBackend:
         self,
         table_name: str,
         id_columns: list[str],
-        filter_columns: dict[str, str],
+        filter_columns: dict[str, Any],
         current_ids: set[tuple],
     ) -> int:
         """Delete records from database that aren't in current CSV using compound filter key.
@@ -414,9 +471,7 @@ class PostgreSQLBackend:
             return 0
 
         # Build WHERE clause: WHERE col1 = ? AND col2 = ? AND (id1, id2) NOT IN (...)
-        filter_conditions = [
-            sql.SQL("{} = %s").format(sql.Identifier(col)) for col in filter_columns
-        ]
+        filter_conditions, filter_params = _postgres_filter(filter_columns)
 
         if len(id_columns) == 1:
             # Single key - simpler query
@@ -435,7 +490,7 @@ class PostgreSQLBackend:
                 sql.Identifier(id_columns[0]),
                 sql.SQL(", ").join(sql.Placeholder() * len(current_ids_list)),
             )
-            params = tuple(list(filter_columns.values()) + current_ids_list)
+            params = tuple(filter_params + current_ids_list)
         else:
             # Compound key - use row value constructor
             id_cols_sql = sql.SQL("({})").format(
@@ -459,7 +514,7 @@ class PostgreSQLBackend:
             )
             # Flatten the list of tuples for params
             id_params = [val for id_tuple in current_ids for val in id_tuple]
-            params = tuple(list(filter_columns.values()) + id_params)
+            params = tuple(filter_params + id_params)
 
         # Count first
         count_sql = count_query.as_string(self.conn)
@@ -545,6 +600,12 @@ class SQLiteBackend:
             db_path = connection_string
 
         self.conn = sqlite3.connect(db_path)
+        self.conn.create_function(
+            "REGEXP",
+            2,
+            lambda pattern, value: value is not None and re.search(pattern, str(value)) is not None,
+            deterministic=True,
+        )
         self.cursor = self.conn.cursor()
 
     def execute(self, query: str, params: tuple[Any, ...] | None = None) -> None:
@@ -592,6 +653,9 @@ class SQLiteBackend:
             "date": "TEXT",
             "datetime": "TEXT",
             "timestamp": "TEXT",
+            "time": "TEXT",
+            "timetz": "TEXT",
+            "timestamptz": "TEXT",
             "boolean": "INTEGER",  # SQLite uses INTEGER for boolean (0/1)
             "bool": "INTEGER",
             "text": "TEXT",
@@ -714,7 +778,7 @@ class SQLiteBackend:
         self,
         table_name: str,
         id_columns: list[str],
-        filter_columns: dict[str, str],
+        filter_columns: dict[str, Any],
         current_ids: set[tuple],
     ) -> int:
         """Delete records from database that aren't in current CSV using compound filter key.
@@ -732,7 +796,7 @@ class SQLiteBackend:
             return 0
 
         # Build WHERE clause: WHERE col1 = ? AND col2 = ? AND (id1, id2) NOT IN (...)
-        filter_conditions = [f'"{col}" = ?' for col in filter_columns]
+        filter_conditions, filter_params = _sqlite_filter(filter_columns)
 
         if len(id_columns) == 1:
             # Single key - simpler query
@@ -750,7 +814,7 @@ class SQLiteBackend:
                 WHERE {" AND ".join(filter_conditions)}
                 AND "{id_columns[0]}" NOT IN ({placeholders})
             """
-            params = tuple(list(filter_columns.values()) + current_ids_list)
+            params = tuple(filter_params + current_ids_list)
         else:
             # Compound key - use row value constructor
             quoted_cols = [f'"{col}"' for col in id_columns]
@@ -768,7 +832,7 @@ class SQLiteBackend:
             """
             # Flatten the list of tuples for params
             id_params = [val for id_tuple in current_ids for val in id_tuple]
-            params = tuple(list(filter_columns.values()) + id_params)
+            params = tuple(filter_params + id_params)
 
         # Count first
         logger.debug(f"SQLite count query: {count_query}")
@@ -789,7 +853,7 @@ class SQLiteBackend:
         self,
         table_name: str,
         id_columns: list[str],
-        filter_columns: dict[str, str],
+        filter_columns: dict[str, Any],
         current_ids: set[tuple],
     ) -> int:
         """Count records that would be deleted using compound filter key.
@@ -807,7 +871,7 @@ class SQLiteBackend:
             return 0
 
         # Build WHERE clause: WHERE col1 = ? AND col2 = ? AND (id1, id2) NOT IN (...)
-        filter_conditions = [f'"{col}" = ?' for col in filter_columns]
+        filter_conditions, filter_params = _sqlite_filter(filter_columns)
 
         if len(id_columns) == 1:
             # Single key - simpler query
@@ -820,7 +884,7 @@ class SQLiteBackend:
                 WHERE {" AND ".join(filter_conditions)}
                 AND "{id_columns[0]}" NOT IN ({placeholders})
             """
-            params = tuple(list(filter_columns.values()) + current_ids_list)
+            params = tuple(filter_params + current_ids_list)
         else:
             # Compound key - use row value constructor
             quoted_cols = [f'"{col}"' for col in id_columns]
@@ -833,7 +897,7 @@ class SQLiteBackend:
             """
             # Flatten the list of tuples for params
             id_params = [val for id_tuple in current_ids for val in id_tuple]
-            params = tuple(list(filter_columns.values()) + id_params)
+            params = tuple(filter_params + id_params)
 
         count_result = self.fetchall(count_query, params)
         return count_result[0][0] if count_result else 0
@@ -918,7 +982,7 @@ class DatabaseConnection:
         self,
         table_name: str,
         id_columns: list[str],
-        filter_columns: dict[str, str],
+        filter_columns: dict[str, Any],
         current_ids: set[tuple],
     ) -> int:
         """Delete records from database that aren't in current CSV using compound filter key."""
@@ -932,7 +996,7 @@ class DatabaseConnection:
         self,
         table_name: str,
         id_columns: list[str],
-        filter_columns: dict[str, str],
+        filter_columns: dict[str, Any],
         current_ids: set[tuple],
     ) -> int:
         """Count records that would be deleted using compound filter key."""
@@ -1274,7 +1338,7 @@ class DatabaseConnection:
         """
         if data_type is None:
             return False
-        return data_type.lower().strip() in ("date", "datetime", "timestamp")
+        return is_temporal(data_type)
 
     @staticmethod
     def _is_boolean_type(data_type: str | None) -> bool:
@@ -1375,6 +1439,12 @@ class DatabaseConnection:
             return DatabaseConnection._MIN_DATE
         if dt_lower in ("datetime", "timestamp"):
             return DatabaseConnection._MIN_DATETIME
+        if dt_lower == "timestamptz":
+            return DatabaseConnection._MIN_DATETIME.replace(tzinfo=datetime.timezone.utc)
+        if dt_lower == "time":
+            return datetime.time()
+        if dt_lower == "timetz":
+            return datetime.time(tzinfo=datetime.timezone.utc)
         return ""
 
     def _validate_and_fix_row(
@@ -1384,6 +1454,7 @@ class DatabaseConnection:
         job: CrumpJob,
         csv_row: dict[str, Any],
         warning_counts: dict[str, int] | None = None,
+        row_number: int | None = None,
     ) -> dict[str, Any] | None:
         """Validate a transformed row and apply failure_mode rules.
 
@@ -1417,7 +1488,15 @@ class DatabaseConnection:
             else:
                 logger.warning(msg)
 
-        for col_mapping in sync_columns:
+        validation_columns = list(sync_columns)
+        if job.filename_to_column:
+            validation_columns.extend(
+                ColumnMapping(
+                    None, col.db_column, col.data_type, datetime_format=col.datetime_format
+                )
+                for col in job.filename_to_column.columns.values()
+            )
+        for col_mapping in validation_columns:
             db_col = col_mapping.db_column
 
             # Determine if this column's value is missing from the CSV
@@ -1577,6 +1656,34 @@ class DatabaseConnection:
                     )
                     row_data[db_col] = default
 
+            if (
+                is_temporal(col_mapping.data_type)
+                and db_col in row_data
+                and row_data[db_col] is not None
+            ):
+                try:
+                    row_data[db_col] = parse_temporal(
+                        row_data[db_col], col_mapping.data_type, col_mapping.datetime_format
+                    )
+                except (ValueError, OverflowError) as exc:
+                    location = f" at selected row {row_number}" if row_number is not None else ""
+                    message = f"Invalid temporal value for column '{db_col}'{location}: {exc}"
+                    # Keep counts grouped but emit one actionable diagnostic per category.
+                    action = (
+                        "fix"
+                        if failure_mode == FailureMode.PERMISSIVE
+                        and col_mapping.nullable is not False
+                        else "skip"
+                    )
+                    key = f"{action}:invalid_temporal:{db_col}"
+                    if warning_counts is not None and key not in warning_counts:
+                        logger.warning(message)
+                    _warn(key, message)
+                    if action == "fix":
+                        row_data[db_col] = None
+                    else:
+                        return None
+
         return row_data
 
     @staticmethod
@@ -1601,7 +1708,10 @@ class DatabaseConnection:
             extra = ":".join(parts[3:]) if len(parts) > 3 else ""
             rows_word = "row" if count == 1 else "rows"
 
-            if action == "skip" and reason == "missing_non_nullable":
+            if reason == "invalid_temporal":
+                operation = "Set to NULL" if action == "fix" else "Skipped"
+                msg = f"{operation} {count} {rows_word} - invalid temporal value for '{col}'"
+            elif action == "skip" and reason == "missing_non_nullable":
                 msg = (
                     f"STRICT mode: Skipped {count} {rows_word} — missing non-nullable field '{col}'"
                 )
@@ -1665,6 +1775,69 @@ class DatabaseConnection:
 
             logger.warning(msg)
 
+    def _iter_validated_rows(
+        self,
+        reader: Any,
+        job: CrumpJob,
+        sync_columns: list[Any],
+        filename_values: dict[str, str] | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Use identical selection, transformation and validation in preview and sync."""
+        rows_synced = 0
+        rows_skipped = 0
+        warning_counts: dict[str, int] = defaultdict(int)
+        computed_temporals = [
+            col
+            for col in sync_columns
+            if (col.function or col.expression)
+            and is_temporal(col.data_type)
+            and col.datetime_format is None
+        ]
+        computed_formats: dict[str, set[str]] = {col.db_column: set() for col in computed_temporals}
+        if job.sample_percentage is not None and job.sample_percentage < 100:
+            all_rows = list(reader)
+            rows = (
+                row
+                for index, row in enumerate(all_rows)
+                if self._should_include_row(index, len(all_rows), job.sample_percentage)
+            )
+        else:
+            rows = iter(reader)
+        for row_number, row in enumerate(rows, 1):
+            row_data = apply_row_transformations(
+                row, sync_columns, job.filename_to_column, filename_values, parse_temporals=False
+            )
+            for col in computed_temporals:
+                value = row_data.get(col.db_column)
+                if value is not None and str(value).strip():
+                    try:
+                        computed_formats[col.db_column].add(parse_automatic(str(value)).format)
+                    except ValueError:
+                        continue
+            validated = self._validate_and_fix_row(
+                row_data, sync_columns, job, row, warning_counts, row_number
+            )
+            if validated is None:
+                rows_skipped += 1
+                continue
+            rows_synced += 1
+            yield validated
+        for col in computed_temporals:
+            self._log_parser_formats(
+                reader.file_path,
+                col,
+                computed_formats[col.db_column],
+                col.csv_column or col.db_column,
+            )
+        self._log_validation_summary(warning_counts)
+        if rows_skipped:
+            logger.warning(f"Skipped {rows_skipped} rows due to validation failures")
+        if job.failure_mode == FailureMode.STRICT and rows_skipped and not rows_synced:
+            raise ValueError(
+                f"STRICT mode: All {rows_skipped} row(s) were rejected due to "
+                f"validation failures. No data was imported into '{job.target_table}'."
+            )
+
     def _process_tabular_rows(
         self,
         reader: Any,
@@ -1686,75 +1859,11 @@ class DatabaseConnection:
             Tuple of (rows_synced, synced_ids) where synced_ids are tuples of ID values
         """
         rows_synced = 0
-        rows_skipped = 0
         synced_ids: set[tuple] = set()
-        warning_counts: dict[str, int] = defaultdict(int)
-
-        # For sampling, we need to know total row count first
-        if job.sample_percentage is not None and job.sample_percentage < 100:
-            # Read all rows into memory to get total count and apply sampling
-            all_rows = list(reader)
-            total_rows = len(all_rows)
-
-            for row_index, row in enumerate(all_rows):
-                # Check if this row should be included
-                if not self._should_include_row(row_index, total_rows, job.sample_percentage):
-                    continue
-
-                # Apply column transformations
-                row_data = apply_row_transformations(
-                    row, sync_columns, job.filename_to_column, filename_values
-                )
-
-                # Validate and fix row based on failure_mode
-                validated = self._validate_and_fix_row(
-                    row_data, sync_columns, job, row, warning_counts
-                )
-                if validated is None:
-                    rows_skipped += 1
-                    continue
-
-                self.upsert_row(job.target_table, primary_keys, validated)
-
-                # Track synced IDs as tuples (for compound key support)
-                id_values = tuple(validated[id_col.db_column] for id_col in job.id_mapping)
-                synced_ids.add(id_values)
-                rows_synced += 1
-        else:
-            # No sampling - process rows normally without loading into memory
-            for row in reader:
-                # Apply column transformations
-                row_data = apply_row_transformations(
-                    row, sync_columns, job.filename_to_column, filename_values
-                )
-
-                # Validate and fix row based on failure_mode
-                validated = self._validate_and_fix_row(
-                    row_data, sync_columns, job, row, warning_counts
-                )
-                if validated is None:
-                    rows_skipped += 1
-                    continue
-
-                self.upsert_row(job.target_table, primary_keys, validated)
-
-                # Track synced IDs as tuples (for compound key support)
-                id_values = tuple(validated[id_col.db_column] for id_col in job.id_mapping)
-                synced_ids.add(id_values)
-                rows_synced += 1
-
-        # Emit grouped validation summary (one message per warning category)
-        self._log_validation_summary(warning_counts)
-
-        if rows_skipped > 0:
-            logger.warning(f"Skipped {rows_skipped} rows due to validation failures")
-
-        # In STRICT mode, if the file had rows but ALL were rejected, raise an error
-        if job.failure_mode == FailureMode.STRICT and rows_skipped > 0 and rows_synced == 0:
-            raise ValueError(
-                f"STRICT mode: All {rows_skipped} row(s) were rejected due to "
-                f"validation failures. No data was imported into '{job.target_table}'."
-            )
+        for validated in self._iter_validated_rows(reader, job, sync_columns, filename_values):
+            self.upsert_row(job.target_table, primary_keys, validated)
+            synced_ids.add(tuple(validated[col.db_column] for col in job.id_mapping))
+            rows_synced += 1
 
         return rows_synced, synced_ids
 
@@ -1785,40 +1894,240 @@ class DatabaseConnection:
         file_format = _detect_file_format(file_path)
 
         with create_reader(file_path, file_format=file_format) as reader:
-            # For sampling, we need to know total row count first
-            if job.sample_percentage is not None and job.sample_percentage < 100:
-                # Read all rows into memory to get total count and apply sampling
-                all_rows = list(reader)
-                total_rows = len(all_rows)
-
-                for row_index, row in enumerate(all_rows):
-                    # Check if this row should be included
-                    if not self._should_include_row(row_index, total_rows, job.sample_percentage):
-                        continue
-
-                    # Apply column transformations
-                    row_data = apply_row_transformations(
-                        row, sync_columns, job.filename_to_column, filename_values
-                    )
-
-                    # Track synced IDs as tuples (for compound key support)
-                    id_values = tuple(row_data[id_col.db_column] for id_col in job.id_mapping)
-                    synced_ids.add(id_values)
-                    row_count += 1
-            else:
-                # No sampling - process rows normally
-                for row in reader:
-                    # Apply column transformations
-                    row_data = apply_row_transformations(
-                        row, sync_columns, job.filename_to_column, filename_values
-                    )
-
-                    # Track synced IDs as tuples (for compound key support)
-                    id_values = tuple(row_data[id_col.db_column] for id_col in job.id_mapping)
-                    synced_ids.add(id_values)
-                    row_count += 1
+            for row_data in self._iter_validated_rows(reader, job, sync_columns, filename_values):
+                synced_ids.add(tuple(row_data[col.db_column] for col in job.id_mapping))
+                row_count += 1
 
         return row_count, synced_ids
+
+    @classmethod
+    def _resolve_temporal_mapping(
+        cls,
+        file_path: Path,
+        mapping: ColumnMapping | FilenameColumnMapping,
+        inference: TemporalInference,
+        source: str,
+    ) -> None:
+        if mapping.data_type is None:
+            inferred, _ = inference.result()
+            if inferred is None:
+                if inference.has_submicrosecond_value:
+                    logger.warning(
+                        f"{file_path.name}: '{source}' retained as text: "
+                        "sub-microsecond precision requires explicit text or "
+                        "epoch-nanosecond storage"
+                    )
+                return
+            mapping.data_type = inferred
+        if not is_temporal(mapping.data_type) or mapping.datetime_format is not None:
+            return
+        cls._log_parser_formats(file_path, mapping, inference.formats, source)
+
+    @staticmethod
+    def _log_parser_formats(
+        file_path: Path,
+        mapping: ColumnMapping | FilenameColumnMapping,
+        formats: set[str],
+        source: str,
+    ) -> None:
+        logger.info(
+            "%s: automatically parsing %s -> %s as %s using %s "
+            "(numeric dates are year-first or day-first, never month-first).",
+            file_path.name,
+            source,
+            mapping.db_column,
+            mapping.data_type,
+            ", ".join(sorted(formats))
+            if formats
+            else "common ISO/day-first formats (no valid values)",
+        )
+
+    def _existing_non_temporal_columns(self, table: str) -> set[str]:
+        """Existing columns whose stored type is known not to be temporal.
+
+        Untyped mappings onto these columns keep their raw values, so automatic
+        inference never changes how data in an existing table is stored. SQLite
+        stores temporal values as TEXT, so only its non-TEXT columns are known.
+        """
+        if not self.table_exists(table):
+            return set()
+        existing = self.get_existing_columns_with_types(table)
+        if isinstance(self.backend, PostgreSQLBackend):
+            return {
+                name
+                for name, sql_type in existing.items()
+                if sql_type not in _POSTGRES_TEMPORAL_TYPES
+            }
+        return {name for name, sql_type in existing.items() if sql_type.lower() != "text"}
+
+    def _resolve_temporal_columns(
+        self, file_path: Path, table: str, columns: list[ColumnMapping]
+    ) -> None:
+        existing_non_temporal = self._existing_non_temporal_columns(table)
+        candidates = [
+            col
+            for col in columns
+            if col.datetime_format is None
+            and (col.data_type is None or is_temporal(col.data_type))
+            and not (col.data_type is None and col.db_column.lower() in existing_non_temporal)
+            and not (col.function or col.expression)
+        ]
+        if not candidates:
+            return
+        inferences = {col.db_column: TemporalInference() for col in candidates}
+        with create_reader(file_path, file_format=_detect_file_format(file_path)) as reader:
+            for row in islice(reader, 1000):
+                transformed = apply_row_transformations(row, candidates, parse_temporals=False)
+                for col in candidates:
+                    value = transformed.get(col.db_column)
+                    if value is not None and str(value).strip():
+                        inferences[col.db_column].add(str(value))
+        for col in candidates:
+            self._resolve_temporal_mapping(
+                file_path, col, inferences[col.db_column], col.csv_column or col.db_column
+            )
+
+    def _resolve_filename_columns(
+        self, file_path: Path, job: CrumpJob, filename_values: dict[str, str] | None
+    ) -> CrumpJob:
+        resolved = copy(job)
+        if job.filename_to_column and filename_values:
+            resolved.filename_to_column = copy(job.filename_to_column)
+            resolved.filename_to_column.columns = {
+                name: copy(col) for name, col in job.filename_to_column.columns.items()
+            }
+            existing_non_temporal = self._existing_non_temporal_columns(job.target_table)
+            for name, col in resolved.filename_to_column.columns.items():
+                if col.data_type is None and col.db_column.lower() in existing_non_temporal:
+                    continue
+                if name in filename_values:
+                    inference = TemporalInference()
+                    inference.add(filename_values[name])
+                    self._resolve_temporal_mapping(file_path, col, inference, f"filename[{name}]")
+        return resolved
+
+    def _filename_delete_values(
+        self, job: CrumpJob, filename_values: dict[str, str]
+    ) -> dict[str, Any]:
+        """Cleanup filter values, validated and normalised exactly as inserted values are.
+
+        Values are checked with the strict row validation, so a value that would be
+        truncated, nulled or rejected on insert fails before any writes instead of
+        producing a filter that can never match.
+
+        Older versions stored filename values as extracted (e.g. ``20240229``), so where
+        a column can still hold that spelling (any SQLite column, or a PostgreSQL text
+        column) the raw value is matched as well, as a ``(normalised, raw)`` tuple.
+        """
+        if not job.filename_to_column:
+            return {}
+        cleanup = {
+            name: col
+            for name, col in job.filename_to_column.columns.items()
+            if col.use_to_delete_old_rows and name in filename_values
+        }
+        if not cleanup:
+            return {}
+        strict_job = copy(job)
+        strict_job.failure_mode = FailureMode.STRICT
+        strict_job.filename_to_column = copy(job.filename_to_column)
+        strict_job.filename_to_column.columns = cleanup
+        raw = {col.db_column: filename_values[name] for name, col in cleanup.items()}
+        problems: dict[str, int] = {}
+        validated = self._validate_and_fix_row(dict(raw), [], strict_job, {}, problems)
+        if validated is None or any(validated.get(col) is None for col in raw):
+            details = ", ".join(key.removeprefix("skip:") for key in problems) or "empty value"
+            raise ValueError(
+                f"Filename cleanup values {raw} are not valid for their configured types "
+                f"({details}); refusing to sync or delete records"
+            )
+
+        existing = (
+            self.get_existing_columns_with_types(job.target_table)
+            if self.table_exists(job.target_table)
+            else {}
+        )
+        is_sqlite = not isinstance(self.backend, PostgreSQLBackend)
+        values: dict[str, Any] = {}
+        for column, raw_value in raw.items():
+            value = validated[column]
+            stored_type = existing.get(column.lower(), "").lower()
+            can_hold_raw = stored_type and (
+                is_sqlite or stored_type == "text" or stored_type.startswith("varchar")
+            )
+            if can_hold_raw and str(value) != raw_value:
+                values[column] = (value, raw_value)
+            else:
+                values[column] = value
+        return values
+
+    def _check_legacy_temporal_keys(
+        self, table: str, columns: list[ColumnMapping], primary_keys: set[str]
+    ) -> None:
+        """Refuse to sync when existing text-stored temporal keys are not canonical.
+
+        Upserts match keys by value, so rewriting ``20240229`` as ``2024-02-29`` would
+        insert duplicates instead of updating the existing rows.
+        """
+        if not self.table_exists(table):
+            return
+        existing = self.get_existing_columns_with_types(table)
+        backend = self.backend
+        assert backend is not None
+        for col in columns:
+            if col.db_column not in primary_keys or not is_temporal(col.data_type):
+                continue
+            assert col.data_type is not None
+            stored_type = existing.get(col.db_column.lower(), "").lower()
+            if not (stored_type == "text" or stored_type.startswith("varchar")):
+                continue
+            pattern = CANONICAL_PATTERNS[col.data_type.lower().strip()]
+            if isinstance(backend, PostgreSQLBackend):
+                query = sql.SQL(
+                    "SELECT {col} FROM {table} WHERE {col} IS NOT NULL AND {col} !~ %s LIMIT 1"
+                ).format(col=sql.Identifier(col.db_column), table=sql.Identifier(table))
+                rows = backend.fetchall(query.as_string(backend.conn), (pattern,))
+            else:
+                rows = backend.fetchall(
+                    f'SELECT "{col.db_column}" FROM "{table}" '
+                    f'WHERE "{col.db_column}" IS NOT NULL '
+                    f'AND NOT "{col.db_column}" REGEXP ? LIMIT 1',
+                    (pattern,),
+                )
+            if rows:
+                raise ValueError(
+                    f"Primary key column '{col.db_column}' in '{table}' holds {rows[0][0]!r}, "
+                    f"which is not in canonical {col.data_type} form; syncing would duplicate "
+                    "rows. Migrate the existing keys explicitly before syncing."
+                )
+
+    def _check_temporal_schema(self, table: str, definitions: dict[str, str]) -> None:
+        """Do not let PostgreSQL silently discard offsets on an existing naive column."""
+        if not isinstance(self.backend, PostgreSQLBackend) or not self.table_exists(table):
+            return
+        existing = self.get_existing_columns_with_types(table)
+        for column, definition in definitions.items():
+            old_type = existing.get(column.lower(), "")
+            new_type = definition.lower().split(" not null")[0].split(" null")[0]
+            new_type = {
+                "timestamp": "timestamp without time zone",
+                "time": "time without time zone",
+            }.get(new_type, new_type)
+            temporal_sql_types = _POSTGRES_TEMPORAL_TYPES
+            if old_type in temporal_sql_types and new_type not in temporal_sql_types:
+                raise ValueError(
+                    f"Column '{column}' in '{table}' is temporal but the incoming mapping "
+                    "is non-temporal; migrate it explicitly before syncing"
+                )
+            if (
+                old_type in temporal_sql_types
+                and new_type in temporal_sql_types
+                and old_type != new_type
+            ):
+                raise ValueError(
+                    f"Column '{column}' in '{table}' has incompatible temporal/timezone semantics; "
+                    "migrate it explicitly before syncing"
+                )
 
     def _prepare_sync(
         self, file_path: Path, job: CrumpJob
@@ -1848,10 +2157,19 @@ class DatabaseConnection:
 
         # Validate and determine columns to sync
         id_csv_columns = self._validate_id_columns(job, csv_columns)
-        sync_columns = self._determine_sync_columns(job, csv_columns, id_csv_columns)
+        sync_columns = [
+            copy(col) for col in self._determine_sync_columns(job, csv_columns, id_csv_columns)
+        ]
+        primary_keys = {col.db_column for col in job.id_mapping}
+        for col in sync_columns:
+            if col.db_column in primary_keys:
+                col.nullable = False
+        self._resolve_temporal_columns(file_path, job.target_table, sync_columns)
+        self._check_legacy_temporal_keys(job.target_table, sync_columns, primary_keys)
 
         # Build schema definitions
         columns_def = self._build_column_definitions(sync_columns, job)
+        self._check_temporal_schema(job.target_table, columns_def)
 
         return csv_columns, sync_columns, columns_def
 
@@ -1875,6 +2193,8 @@ class DatabaseConnection:
             FileNotFoundError: If CSV file doesn't exist
             ValueError: If CSV is invalid or columns don't match
         """
+        job = self._resolve_filename_columns(file_path, job, filename_values)
+        delete_key_values = self._filename_delete_values(job, filename_values or {})
         summary = DryRunSummary()
         summary.table_name = job.target_table
 
@@ -1913,17 +2233,9 @@ class DatabaseConnection:
             delete_key_columns = job.filename_to_column.get_delete_key_columns()
             if delete_key_columns:
                 # Build compound key values from filename_values
-                delete_key_values = {}
-                for col_name, col_mapping in job.filename_to_column.columns.items():
-                    if col_mapping.use_to_delete_old_rows and col_name in filename_values:
-                        delete_key_values[col_mapping.db_column] = filename_values[col_name]
-
                 id_columns = [id_col.db_column for id_col in job.id_mapping]
                 summary.rows_to_delete = self.count_stale_records_compound(
-                    job.target_table,
-                    id_columns,
-                    delete_key_values,
-                    synced_ids,
+                    job.target_table, id_columns, delete_key_values, synced_ids
                 )
 
         return summary
@@ -1960,6 +2272,8 @@ class DatabaseConnection:
         success = False
 
         try:
+            job = self._resolve_filename_columns(file_path, job, filename_values)
+            delete_key_values = self._filename_delete_values(job, filename_values or {})
             # Prepare sync (validates CSV and builds schema)
             csv_columns, sync_columns, columns_def = self._prepare_sync(file_path, job)
 
@@ -1980,17 +2294,9 @@ class DatabaseConnection:
                 delete_key_columns = job.filename_to_column.get_delete_key_columns()
                 if delete_key_columns:
                     # Build compound key values from filename_values
-                    delete_key_values = {}
-                    for col_name, col_mapping in job.filename_to_column.columns.items():
-                        if col_mapping.use_to_delete_old_rows and col_name in filename_values:
-                            delete_key_values[col_mapping.db_column] = filename_values[col_name]
-
                     id_columns = [id_col.db_column for id_col in job.id_mapping]
                     rows_deleted = self.delete_stale_records_compound(
-                        job.target_table,
-                        id_columns,
-                        delete_key_values,
-                        synced_ids,
+                        job.target_table, id_columns, delete_key_values, synced_ids
                     )
 
             success = True

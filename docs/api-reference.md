@@ -318,6 +318,8 @@ if skipped:
 
 ## Configuration Classes
 
+Crump handles a wide variety of date and time formats and will detect most dates and times automatically. See [Dates and Times](date-and-time.md) for more details.
+
 ### CrumpConfig
 
 Main configuration container.

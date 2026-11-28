@@ -19,6 +19,7 @@ from crump.config import (
     IndexColumn,
 )
 from crump.console_utils import CHECKMARK
+from crump.temporal import is_temporal
 from crump.type_detection import analyze_tabular_file_types_and_nullable, suggest_id_column
 
 console = Console()
@@ -100,7 +101,7 @@ def suggest_indexes(column_info: dict[str, tuple[str, bool]], id_column: str) ->
         order = None
 
         # Date/datetime columns get descending indexes
-        if col_type in ("date", "datetime"):
+        if is_temporal(col_type):
             index_name = f"idx_{col_name}"
             order = "DESC"
 
@@ -167,6 +168,11 @@ def detect_filename_patterns(filename: str) -> FilenameToColumn | None:
                     db_column="file_date",
                     data_type=_col_type,
                     use_to_delete_old_rows=True,
+                    datetime_format={
+                        "YYYYMMDD": "%Y%m%d",
+                        "YYYY-MM-DD": "%Y-%m-%d",
+                        "YYYY_MM_DD": "%Y_%m_%d",
+                    }[_pattern_desc],
                 )
             }
 
