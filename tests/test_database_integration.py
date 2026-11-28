@@ -6,12 +6,97 @@ from pathlib import Path
 import pytest
 
 from crump.config import CrumpConfig
-from crump.database import sync_file_to_db
+from crump.database import DatabaseConnection, sync_file_to_db, sync_file_to_db_dry_run
 from tests.db_test_utils import execute_query, get_table_columns, get_table_indexes
 
 
 class TestDatabaseIntegration:
     """Integration tests with SQLite and PostgreSQL databases."""
+
+    def test_filename_keys_isolate_upserts_and_cleanup(self, tmp_path: Path, db_url: str) -> None:
+        config_file = tmp_path / "crump.yml"
+        config_file.write_text("""
+jobs:
+  sales:
+    target_table: sales
+    id_mapping:
+      shop: {source: filename}
+      sale_id: {db_column: id, type: integer}
+      day: {source: filename}
+    filename_to_column:
+      template: "sales_[region]_[shop]_[day].csv"
+      columns:
+        region: {use_to_delete_old_rows: true}
+        shop: {db_column: shop_id, type: integer}
+        day: {db_column: sale_date, type: date}
+""")
+        job = CrumpConfig.from_yaml(config_file).jobs["sales"]
+        first = tmp_path / "sales_east_01_2024-01-15.csv"
+        other_shop = tmp_path / "sales_east_02_2024-01-15.csv"
+        other_date = tmp_path / "sales_east_01_2024-01-16.csv"
+        for path in (first, other_shop, other_date):
+            path.write_text("sale_id,value\n1,original\n2,stale\n3,keep\n")
+            assert sync_file_to_db(path, job, db_url) == 3
+
+        first.write_text("sale_id,value\n")
+        assert sync_file_to_db_dry_run(first, job, db_url).rows_to_delete == 0
+        assert sync_file_to_db(first, job, db_url) == 0
+
+        first.write_text("sale_id,value\n1,corrected\n3,keep\n")
+        summary = sync_file_to_db_dry_run(first, job, db_url)
+        assert (summary.rows_to_sync, summary.rows_to_delete) == (2, 1)
+        assert execute_query(db_url, "SELECT COUNT(*) FROM sales") == [(9,)]
+        assert sync_file_to_db(first, job, db_url) == 2
+        rows = execute_query(
+            db_url,
+            "SELECT shop_id, CAST(sale_date AS TEXT), id, value "
+            "FROM sales ORDER BY shop_id, sale_date, id",
+        )
+        assert rows == [
+            (1, "2024-01-15", 1, "corrected"),
+            (1, "2024-01-15", 3, "keep"),
+            (1, "2024-01-16", 1, "original"),
+            (1, "2024-01-16", 2, "stale"),
+            (1, "2024-01-16", 3, "keep"),
+            (2, "2024-01-15", 1, "original"),
+            (2, "2024-01-15", 2, "stale"),
+            (2, "2024-01-15", 3, "keep"),
+        ]
+
+    def test_filename_keys_check_captures_and_existing_schema(
+        self, tmp_path: Path, db_url: str
+    ) -> None:
+        config_file = tmp_path / "crump.yml"
+        config_file.write_text(r"""
+jobs:
+  sales:
+    target_table: sales
+    id_mapping:
+      sale_id: id
+      day: {source: filename}
+    filename_to_column:
+      regex: '^sales(?:_(?P<day>\d*))?\.csv$'
+      columns:
+        day: {db_column: sale_day}
+""")
+        job = CrumpConfig.from_yaml(config_file).jobs["sales"]
+        for name in ("bad.csv", "sales.csv", "sales_.csv"):
+            path = tmp_path / name
+            path.write_text("sale_id,value\n1,one\n")
+            for sync in (sync_file_to_db_dry_run, sync_file_to_db):
+                with pytest.raises(ValueError, match="missing required ID capture 'day'"):
+                    sync(path, job, db_url)
+        with DatabaseConnection(db_url) as db:
+            assert not db.table_exists("sales")
+            db.create_table_if_not_exists("sales", {"id": "TEXT"}, ["id"])
+
+        valid = tmp_path / "sales_15.csv"
+        valid.write_text("sale_id,value\n1,one\n")
+        for sync in (sync_file_to_db_dry_run, sync_file_to_db):
+            with pytest.raises(ValueError, match="incompatible primary key"):
+                sync(valid, job, db_url)
+        assert get_table_columns(db_url, "sales") == ["id"]
+        assert execute_query(db_url, "SELECT COUNT(*) FROM sales") == [(0,)]
 
     def test_sync_csv_with_column_mapping_and_exclusion(self, tmp_path: Path, db_url: str) -> None:
         """Test syncing CSV with renamed column and excluded column.

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.11.0
+
+- Filename values can be part of a compound primary key: reference a filename
+  placeholder from `id_mapping` with `{source: filename}`. Upserts use the full key, and
+  stale-row cleanup (including dry runs) is scoped to every filename key value. See
+  [Compound Key with Filename Values](configuration.md#compound-key-with-filename-values).
+- Filename keys follow the same type detection and validation as other values, so an
+  untyped `20240115` is stored as the date `2024-01-15`, and an invalid or missing
+  filename key stops the sync before anything is written.
+- Crump never changes an existing table's primary key; a sync whose key does not match
+  stops with an error.
+
 ## 0.10.0
 
 ### Added

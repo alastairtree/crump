@@ -6,6 +6,7 @@ import csv
 import os
 import shutil
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -18,7 +19,13 @@ from crump.cdf_reader import (
     group_variables_by_record_count,
     read_cdf_variables,
 )
-from crump.config import CrumpJob, apply_row_transformations
+from crump.config import (
+    ColumnMapping,
+    CrumpJob,
+    FilenameColumnMapping,
+    FilenameKeyConflictError,
+    apply_row_transformations,
+)
 from crump.file_types import ParquetCompression
 from crump.tabular_file import create_writer
 from crump.temporal import InvalidTemporalValueError
@@ -444,7 +451,12 @@ def extract_cdf_with_config(
         FileNotFoundError: If CDF file doesn't exist
         FileExistsError: If output file exists and append is False
     """
-    # Step 1: Extract CDF to temporary CSV files (raw dump)
+    filename_values = None
+    if job.filename_to_column:
+        filename_values = job.filename_to_column.extract_values_from_filename(cdf_file_path)
+        job.validate_filename_keys(cdf_file_path, filename_values)
+
+    # Extract CDF to temporary CSV files (raw dump)
     temp_dir = Path(tempfile.mkdtemp(prefix="data_sync_extract_"))
     results = []
 
@@ -462,12 +474,7 @@ def extract_cdf_with_config(
         if not raw_results:
             raise ValueError("No data could be extracted from CDF file")
 
-        # Step 2: Extract values from filename if configured
-        filename_values = None
-        if job.filename_to_column:
-            filename_values = job.filename_to_column.extract_values_from_filename(cdf_file_path)
-
-        # Step 3: Try to transform each extracted CSV
+        # Try to transform each extracted CSV
         for raw_result in raw_results:
             raw_csv_path = raw_result.output_file
 
@@ -489,8 +496,8 @@ def extract_cdf_with_config(
                 if result:
                     results.append(result)
 
-            except InvalidTemporalValueError:
-                # Bad data, not a mapping mismatch: report it rather than skip the group
+            except (InvalidTemporalValueError, FilenameKeyConflictError):
+                # Bad data or a key conflict, not a mapping mismatch: report it rather than skip
                 raise
             except ValueError:
                 # This file doesn't match the column mappings - skip it silently
@@ -515,7 +522,7 @@ def _transform_tabular_file_with_config(
     output_dir: Path,
     cdf_file_path: Path,
     job: CrumpJob,
-    filename_values: dict[str, str] | None,
+    filename_values: Mapping[str, str | None] | None,
     raw_result: ExtractionResult,
     append: bool = False,
     filename_template: str = "[SOURCE_FILE]_[VARIABLE_NAME].csv",
@@ -558,7 +565,9 @@ def _transform_tabular_file_with_config(
 
         # Add ID columns
         for id_col in job.id_mapping:
-            if id_col.expression or id_col.function:
+            if isinstance(id_col, FilenameColumnMapping):
+                output_columns.append(id_col.db_column)
+            elif id_col.expression or id_col.function:
                 # Custom function for ID
                 sync_columns.append(id_col)
                 output_columns.append(id_col.db_column)
@@ -591,17 +600,16 @@ def _transform_tabular_file_with_config(
                 if not any(
                     id_col.csv_column == csv_col for id_col in job.id_mapping if id_col.csv_column
                 ):
-                    # Import ColumnMapping here to avoid circular import
-                    from crump.config import ColumnMapping
-
                     col_mapping = ColumnMapping(csv_column=csv_col, db_column=csv_col)
                     sync_columns.append(col_mapping)
                     output_columns.append(csv_col)
 
         # Add filename-extracted columns if configured
+        job.validate_filename_key_destinations(sync_columns)
         if filename_values and job.filename_to_column:
+            filename_keys = job.filename_key_columns
             for col_name, filename_col_mapping in job.filename_to_column.columns.items():
-                if col_name in filename_values:
+                if col_name in filename_values and filename_col_mapping not in filename_keys:
                     output_columns.append(filename_col_mapping.db_column)
 
         # If no columns to output, skip this CSV

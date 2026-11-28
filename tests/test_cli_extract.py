@@ -650,18 +650,20 @@ jobs:
 class TestExtractFilenameToColumn:
     """Tests for extract with filename_to_column config."""
 
+    @pytest.mark.parametrize("filename_key", [False, True])
     def test_extract_with_filename_to_column(
-        self, cli_runner: CliRunner, imap_cdf_file: Path, tmp_path: Path
+        self, cli_runner: CliRunner, imap_cdf_file: Path, tmp_path: Path, filename_key: bool
     ) -> None:
         """Test extracting with filename_to_column configuration."""
         config_file = tmp_path / "crump_config.yml"
-        config_file.write_text("""
+        filename_key_entry = "      date: {source: filename}\n" if filename_key else ""
+        config_file.write_text(f"""
 jobs:
   imap_mag:
     target_table: mag_data
     id_mapping:
       epoch: timestamp
-    columns:
+{filename_key_entry}    columns:
       vector_magnitude: magnitude
     filename_to_column:
       template: "imap_mag_l1c_norm-magi_[date]_v[version].cdf"
@@ -702,7 +704,7 @@ jobs:
             headers = reader.fieldnames or []
 
             # filename_to_column should add these columns
-            assert "file_date" in headers, f"file_date not in headers: {headers}"
+            assert headers.count("file_date") == 1, headers
             assert "file_version" in headers, f"file_version not in headers: {headers}"
 
             # Verify first row has extracted values

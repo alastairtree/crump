@@ -1027,3 +1027,99 @@ def test_computed_temporal_executes_once(
         assert len(messages) == 1
         assert "%Y-%m-%dT%H:%M:%S" in messages[0]
         assert "%d %b %Y %H:%M:%S" in messages[0]
+
+
+def _filename_key_job(tmp_path: Path, day: dict) -> Path:
+    config = tmp_path / "filename_keys.yml"
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "jobs": {
+                    "dates": {
+                        "target_table": "dates",
+                        "id_mapping": {
+                            "id": {"db_column": "id", "type": "integer"},
+                            "day": {"source": "filename"},
+                        },
+                        "columns": {"value": "value"},
+                        "filename_to_column": {
+                            "template": "readings_[day].csv",
+                            "columns": {"day": {"db_column": "day", **day}},
+                        },
+                    }
+                }
+            }
+        )
+    )
+    return config
+
+
+def _write_readings(tmp_path: Path, day: str, ids: list[int]) -> Path:
+    path = tmp_path / day / f"readings_{day}.csv"
+    path.parent.mkdir(exist_ok=True)
+    path.write_text("id,value\n" + "".join(f"{i},v{i}\n" for i in ids))
+    return path
+
+
+def test_cli_untyped_filename_key_is_date_and_scopes_cleanup(
+    cli_runner: CliRunner, tmp_path: Path, db_url: str
+) -> None:
+    """An untyped filename key is detected as a date; cleanup is scoped to that date."""
+    config = _filename_key_job(tmp_path, {"use_to_delete_old_rows": True})
+    for day, ids in [("20240115", [1, 2, 3]), ("20240116", [1, 2])]:
+        result = invoke_sync(cli_runner, _write_readings(tmp_path, day, ids), config, db_url)
+        assert result.exit_code == 0, result.output
+
+    resync = _write_readings(tmp_path, "20240115", [1, 2])
+    preview = invoke_sync(cli_runner, resync, config, db_url, dry=True)
+    assert preview.exit_code == 0, preview.output
+    assert "1 stale row(s) would be deleted" in preview.output
+    result = invoke_sync(cli_runner, resync, config, db_url)
+    assert result.exit_code == 0, result.output
+
+    rows = execute_query(db_url, "SELECT CAST(day AS TEXT), id FROM dates ORDER BY day, id")
+    assert [tuple(row) for row in rows] == [
+        ("2024-01-15", 1),
+        ("2024-01-15", 2),
+        ("2024-01-16", 1),
+        ("2024-01-16", 2),
+    ]
+    if db_url.startswith("postgres"):
+        types = execute_query(
+            db_url,
+            "SELECT data_type, is_nullable FROM information_schema.columns "
+            "WHERE table_name = 'dates' AND column_name = 'day'",
+        )
+        assert [tuple(row) for row in types] == [("date", "NO")]
+
+
+def test_cli_invalid_filename_key_stops_before_writing(
+    cli_runner: CliRunner, tmp_path: Path, db_url: str
+) -> None:
+    """A filename key that is not valid for its type must not be nulled or written."""
+    config = _filename_key_job(tmp_path, {"type": "date"})
+    source = _write_readings(tmp_path, "20241399", [1])
+    for dry in (True, False):
+        result = invoke_sync(cli_runner, source, config, db_url, dry)
+        assert result.exit_code != 0
+        assert "Filename ID values" in " ".join(result.output.split())
+    with DatabaseConnection(db_url) as db:
+        assert not db.table_exists("dates")
+
+
+def test_cli_legacy_text_filename_key(cli_runner: CliRunner, tmp_path: Path, db_url: str) -> None:
+    """Existing non-canonical filename keys would be duplicated by canonical upserts."""
+    with DatabaseConnection(db_url) as db:
+        db.backend.execute(
+            "CREATE TABLE dates (id INTEGER, day TEXT, value TEXT, PRIMARY KEY (id, day))"
+        )
+        db.backend.execute("INSERT INTO dates VALUES (1, '20240115', 'old')")
+        db.backend.commit()
+    config = _filename_key_job(tmp_path, {"type": "date"})
+    source = _write_readings(tmp_path, "20240115", [1])
+    for dry in (True, False):
+        result = invoke_sync(cli_runner, source, config, db_url, dry)
+        assert result.exit_code != 0
+        assert "not in canonical date form" in " ".join(result.output.split())
+    rows = execute_query(db_url, "SELECT id, day, value FROM dates")
+    assert [tuple(row) for row in rows] == [(1, "20240115", "old")]

@@ -10,6 +10,58 @@ from crump.config import CrumpConfig
 class TestConfigParsing:
     """Test suite for config file parsing."""
 
+    def test_filename_key_config_roundtrip(self, tmp_path: Path) -> None:
+        path = tmp_path / "crump.yml"
+        path.write_text("""
+jobs:
+  sales:
+    target_table: sales
+    id_mapping:
+      date: {source: filename}
+      sale_id: id
+    filename_to_column:
+      template: 'sales_[date].csv'
+      columns:
+        date: {db_column: sale_date, type: date}
+        """)
+        config = CrumpConfig.from_yaml(path)
+        config.save_to_yaml(path)
+        saved = CrumpConfig.from_yaml(path)
+        assert saved.to_yaml_dict()["jobs"]["sales"]["id_mapping"] == {
+            "date": {"source": "filename"},
+            "sale_id": "id",
+        }
+        job = saved.jobs["sales"]
+        assert job.primary_keys == ["sale_date", "id"]
+        assert job.filename_key_columns[0].data_type == "date"
+
+    @pytest.mark.parametrize(
+        ("key_entry", "placeholder", "destination", "message"),
+        [
+            ("{source: filename}", "other", "sale_date", "no filename capture"),
+            ("{source: filename, type: text}", "date", "sale_date", "must use only"),
+            ("{source: filename}", "date", "id", "conflicting mappings"),
+        ],
+    )
+    def test_filename_key_config_errors(
+        self, tmp_path: Path, key_entry: str, placeholder: str, destination: str, message: str
+    ) -> None:
+        path = tmp_path / "crump.yml"
+        path.write_text(f"""
+jobs:
+  sales:
+    target_table: sales
+    id_mapping:
+      date: {key_entry}
+      sale_id: id
+    filename_to_column:
+      template: 'sales_[{placeholder}].csv'
+      columns:
+        date: {{db_column: {destination}}}
+        """)
+        with pytest.raises(ValueError, match=message):
+            CrumpConfig.from_yaml(path)
+
     def test_load_valid_config(self, tmp_path: Path) -> None:
         """Test loading a valid configuration file."""
         config_file = tmp_path / "crump_config.yml"

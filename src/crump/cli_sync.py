@@ -183,6 +183,12 @@ def sync(
             console.print(f"[dim]Available jobs: {available_jobs}[/dim]")
             raise click.Abort() from e
 
+        # Required filename keys come from the original input, not a temporary CDF CSV.
+        filename_values = None
+        if crump_job.filename_key_columns and crump_job.filename_to_column:
+            filename_values = crump_job.filename_to_column.extract_values_from_filename(file_path)
+            crump_job.validate_filename_keys(file_path, filename_values)
+
         # Check if input file is CDF - if so, extract to temporary CSV
         csv_file_to_sync = file_path
         if file_path.suffix.lower() == ".cdf":
@@ -209,10 +215,8 @@ def sync(
                 console.print("[red]Error:[/red] No suitable CSV data found in CDF file")
                 raise click.Abort()
 
-        # Extract values from filename if filename_to_column is configured
-        # Use the CSV filename for extraction (which might be extracted from CDF)
-        filename_values = None
-        if crump_job.filename_to_column:
+        # Keep the existing filename lookup for metadata-only jobs.
+        if crump_job.filename_to_column and not crump_job.filename_key_columns:
             filename_values = crump_job.filename_to_column.extract_values_from_filename(
                 csv_file_to_sync
             )

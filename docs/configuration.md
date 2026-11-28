@@ -50,6 +50,43 @@ id_mapping:
   product_id: product_id
 ```
 
+#### Compound Key with Filename Values
+
+Use `{source: filename}` in `id_mapping` to reference a template placeholder or
+regex named group declared in `filename_to_column.columns`. The database column
+name and type come from that declaration. Other `id_mapping` entries still refer
+to input columns or computed values.
+
+```yaml
+jobs:
+  sales:
+    target_table: sales
+    id_mapping:
+      sale_id: id
+      date: {source: filename}
+    filename_to_column:
+      template: "sales_[date].csv"
+      columns:
+        date:
+          db_column: sale_date
+          type: date
+          use_to_delete_old_rows: true
+```
+
+```bash
+crump sync sales_2024-01-15.csv --config crump_config.yml --job sales
+crump sync sales_2024-01-16.csv --config crump_config.yml --job sales
+```
+
+With the key `(id, sale_date)`, the same `sale_id` can occur on both dates.
+When `use_to_delete_old_rows` is enabled, cleanup (including in a dry run)
+only considers rows that match **every** filename-derived key value and every
+marked cleanup column. A missing or empty required filename capture stops the
+sync. For CDF input, filename keys are read from the original CDF filename.
+
+Crump does not change an existing primary key. If the target table uses the old
+key, migrate it or choose a new target table before syncing.
+
 ### Column Mapping
 
 The `columns` field maps CSV columns to database columns:
