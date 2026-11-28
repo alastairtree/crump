@@ -920,3 +920,24 @@ def test_extract_cdf_with_config_invalid_temporal_keeps_appended_file(
         )
     assert result.output_file.read_bytes() == original
     assert [path.name for path in tmp_path.iterdir()] == [result.output_file.name]
+
+
+def test_extract_cdf_with_config_keeps_backup_when_restore_fails(
+    imap_cdf_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (result,) = extract_cdf_with_config(
+        cdf_file_path=imap_cdf_file, output_dir=tmp_path, job=_vector_job(None)
+    )
+    original = result.output_file.read_bytes()
+
+    def failing_replace(*_args: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr("crump.cdf_extractor.os.replace", failing_replace)
+    with pytest.raises(OSError, match="original contents are kept in") as error:
+        extract_cdf_with_config(
+            cdf_file_path=imap_cdf_file, output_dir=tmp_path, job=_vector_job("time"), append=True
+        )
+    backup = result.output_file.with_name(result.output_file.name + ".crump-backup")
+    assert str(backup) in str(error.value)
+    assert backup.read_bytes() == original

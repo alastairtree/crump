@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import os
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -652,8 +653,9 @@ def _transform_tabular_file_with_config(
 
         # Write using tabular file writer (format auto-detected from extension)
         write_append = append and output_path.exists()
-        # Keep a copy of an existing file so a failure part-way leaves it unchanged.
-        backup = raw_file_path.with_name(raw_file_path.name + ".bak") if write_append else None
+        # Keep a copy of an existing file so a failure part-way leaves it unchanged. It sits
+        # beside the output so restoring it is an atomic same-filesystem rename.
+        backup = output_path.with_name(output_path.name + ".crump-backup") if write_append else None
         if backup is not None:
             shutil.copy2(output_path, backup)
         try:
@@ -684,14 +686,20 @@ def _transform_tabular_file_with_config(
                     writer.writerow(row_list)
                     rows_written += 1
         except BaseException:
-            if backup is not None:
-                shutil.move(backup, output_path)
-            else:
+            if backup is None:
                 output_path.unlink(missing_ok=True)
+                raise
+            try:
+                os.replace(backup, output_path)
+            except OSError as restore_error:
+                # Keep the backup: it is the only intact copy of the original file.
+                raise OSError(
+                    f"Could not restore {output_path} after a failed append; "
+                    f"its original contents are kept in {backup}"
+                ) from restore_error
             raise
-        finally:
-            if backup is not None:
-                backup.unlink(missing_ok=True)
+        if backup is not None:
+            backup.unlink(missing_ok=True)
 
         # Only return result if we wrote at least one row
         if rows_written == 0 and not write_append:
