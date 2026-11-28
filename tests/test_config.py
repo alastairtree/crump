@@ -10,6 +10,129 @@ from crump.config import CrumpConfig
 class TestConfigParsing:
     """Test suite for config file parsing."""
 
+    def test_filename_key_config_roundtrip(self, tmp_path: Path) -> None:
+        path = tmp_path / "crump.yml"
+        path.write_text("""
+jobs:
+  sales:
+    target_table: sales
+    id_mapping:
+      date: {source: filename}
+      sale_id: id
+    filename_to_column:
+      template: 'sales_[date].csv'
+      columns:
+        date: {db_column: sale_date, type: date}
+        """)
+        config = CrumpConfig.from_yaml(path)
+        config.save_to_yaml(path)
+        saved = CrumpConfig.from_yaml(path)
+        assert saved.to_yaml_dict()["jobs"]["sales"]["id_mapping"] == {
+            "date": {"source": "filename"},
+            "sale_id": "id",
+        }
+        job = saved.jobs["sales"]
+        assert job.primary_keys == ["sale_date", "id"]
+        assert job.filename_key_columns[0].data_type == "date"
+
+    def test_filename_key_needs_no_column_entry(self, tmp_path: Path) -> None:
+        """A capture used as a filename key is declared by id_mapping alone."""
+        path = tmp_path / "crump.yml"
+        path.write_text("""
+jobs:
+  sales:
+    target_table: sales
+    id_mapping:
+      sale_id: id
+      day: {source: filename}
+      shop: {source: filename}
+    filename_to_column:
+      template: 'sales_[shop]_[day].csv'
+      columns:
+        shop: {db_column: shop_id, type: integer}
+        """)
+        config = CrumpConfig.from_yaml(path)
+        job = config.jobs["sales"]
+        assert job.primary_keys == ["id", "day", "shop_id"]
+        assert job.filename_to_column is not None
+        assert job.filename_to_column.columns["day"] is job.filename_key_columns[0]
+        assert job.filename_key_columns[0].data_type is None
+
+        # Saving keeps the config minimal and round-trips
+        config.save_to_yaml(path)
+        saved = CrumpConfig.from_yaml(path)
+        ftc = saved.to_yaml_dict()["jobs"]["sales"]["filename_to_column"]
+        assert ftc["columns"] == {"shop": {"db_column": "shop_id", "type": "integer"}}
+        assert saved.jobs["sales"].primary_keys == ["id", "day", "shop_id"]
+
+    def test_filename_key_only_config_omits_columns(self, tmp_path: Path) -> None:
+        path = tmp_path / "crump.yml"
+        path.write_text("""
+jobs:
+  sales:
+    target_table: sales
+    id_mapping:
+      sale_id: id
+      day: {source: filename}
+    filename_to_column:
+      template: 'sales_[day].csv'
+        """)
+        config = CrumpConfig.from_yaml(path)
+        assert config.jobs["sales"].primary_keys == ["id", "day"]
+        config.save_to_yaml(path)
+        saved = CrumpConfig.from_yaml(path)
+        assert "columns" not in saved.to_yaml_dict()["jobs"]["sales"]["filename_to_column"]
+
+    @pytest.mark.parametrize(
+        ("id_mapping", "template", "message"),
+        [
+            ("day: {source: filename}", "sales_[date].csv", "unknown filename ID 'day'"),
+            ("sale_id: id", "sales_[date].csv", "must have 'columns'"),
+        ],
+    )
+    def test_filename_columns_required_without_keys(
+        self, tmp_path: Path, id_mapping: str, template: str, message: str
+    ) -> None:
+        path = tmp_path / "crump.yml"
+        path.write_text(f"""
+jobs:
+  sales:
+    target_table: sales
+    id_mapping:
+      {id_mapping}
+    filename_to_column:
+      template: '{template}'
+        """)
+        with pytest.raises(ValueError, match=message):
+            CrumpConfig.from_yaml(path)
+
+    @pytest.mark.parametrize(
+        ("key_entry", "placeholder", "destination", "message"),
+        [
+            ("{source: filename}", "other", "sale_date", "no filename capture"),
+            ("{source: filename, type: text}", "date", "sale_date", "must use only"),
+            ("{source: filename}", "date", "id", "conflicting mappings"),
+        ],
+    )
+    def test_filename_key_config_errors(
+        self, tmp_path: Path, key_entry: str, placeholder: str, destination: str, message: str
+    ) -> None:
+        path = tmp_path / "crump.yml"
+        path.write_text(f"""
+jobs:
+  sales:
+    target_table: sales
+    id_mapping:
+      date: {key_entry}
+      sale_id: id
+    filename_to_column:
+      template: 'sales_[{placeholder}].csv'
+      columns:
+        date: {{db_column: {destination}}}
+        """)
+        with pytest.raises(ValueError, match=message):
+            CrumpConfig.from_yaml(path)
+
     def test_load_valid_config(self, tmp_path: Path) -> None:
         """Test loading a valid configuration file."""
         config_file = tmp_path / "crump_config.yml"

@@ -11,6 +11,31 @@ from tests.db_test_utils import execute_query, get_table_columns
 class TestParquetDatabaseIntegration:
     """Integration tests for syncing Parquet files to database."""
 
+    def test_filename_key_with_key_only_rows(self, tmp_path: Path, db_url: str) -> None:
+        config_file = tmp_path / "crump.yml"
+        config_file.write_text("""
+jobs:
+  sales:
+    target_table: sales
+    id_mapping:
+      sale_id: id
+      day: {source: filename}
+    filename_to_column:
+      template: 'sales_[day].parquet'
+""")
+        job = CrumpConfig.from_yaml(config_file).jobs["sales"]
+        for day in ("Monday", "Tuesday"):
+            path = tmp_path / f"sales_{day}.parquet"
+            with create_writer(path) as writer:
+                writer.writerow(["sale_id"])
+                writer.writerow(["1"])
+            assert sync_file_to_db(path, job, db_url) == 1
+            assert sync_file_to_db(path, job, db_url) == 1
+        assert execute_query(db_url, "SELECT id, day FROM sales ORDER BY day") == [
+            ("1", "Monday"),
+            ("1", "Tuesday"),
+        ]
+
     def test_sync_parquet_basic(self, tmp_path: Path, db_url: str) -> None:
         """Test basic Parquet file sync to database."""
         # Create Parquet file

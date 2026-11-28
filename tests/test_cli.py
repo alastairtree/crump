@@ -9,6 +9,7 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from crump import __version__
 from crump.cli import main
+from tests.db_test_utils import execute_query
 
 
 class TestCLIBasics:
@@ -29,6 +30,51 @@ class TestCLIBasics:
 
 class TestSyncCommand:
     """Test suite for sync command."""
+
+    @pytest.mark.parametrize("file_type", ["csv", "cdf"])
+    def test_sync_and_dry_run_with_filename_key(
+        self, cli_runner: CliRunner, tmp_path: Path, sqlite_db: str, file_type: str
+    ) -> None:
+        if file_type == "cdf":
+            path = Path("tests/data/imap_mag_l1c_norm-magi_20251010_v001.cdf")
+            pattern = r"^imap_mag_l1c_norm-magi_(?P<day>\d+)_v\d+\.cdf$"
+            row_id = "epoch"
+            day = "20251010"
+        else:
+            path = tmp_path / "sales_20240115.csv"
+            path.write_text("sale_id,value\n1,one\n2,two\n")
+            pattern = r"^sales_(?P<day>\d+)\.csv$"
+            row_id = "sale_id"
+            day = "20240115"
+        config = tmp_path / "crump.yml"
+        config.write_text(f"""
+jobs:
+  sales:
+    target_table: sales
+    id_mapping:
+      {row_id}: id
+      day: {{source: filename}}
+    filename_to_column:
+      regex: '{pattern}'
+""")
+        args = [
+            "sync",
+            str(path),
+            "--config",
+            str(config),
+            "--db-url",
+            sqlite_db,
+            "--max-records",
+            "2",
+        ]
+        preview = cli_runner.invoke(main, [*args, "--dry-run"])
+        assert preview.exit_code == 0, preview.output
+        assert "would be CREATED" in preview.output
+        result = cli_runner.invoke(main, args)
+        assert result.exit_code == 0, result.output
+        # The untyped filename key is detected as a date and stored canonically.
+        canonical = f"{day[:4]}-{day[4:6]}-{day[6:]}"
+        assert execute_query(sqlite_db, "SELECT day FROM sales") == [(canonical,), (canonical,)]
 
     @pytest.mark.parametrize(
         ("connection_string", "expected"),

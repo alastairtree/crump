@@ -6,6 +6,7 @@ import enum
 import fnmatch
 import importlib
 import re
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -219,7 +220,7 @@ class ColumnMapping:
                 raise RuntimeError(f"Failed to execute function '{self.function}': {e}") from e
 
 
-class FilenameColumnMapping:
+class FilenameColumnMapping(ColumnMapping):
     """Mapping for a single column extracted from filename."""
 
     def __init__(
@@ -239,9 +240,8 @@ class FilenameColumnMapping:
             use_to_delete_old_rows: If True, this column is used to identify stale rows
             datetime_format: Optional Python strptime format for the extracted value.
         """
+        super().__init__(csv_column=None, db_column=db_column or name, data_type=data_type)
         self.name = name
-        self.db_column = db_column or name
-        self.data_type = data_type
         self.use_to_delete_old_rows = use_to_delete_old_rows
         validate_datetime_format(data_type, datetime_format)
         self.datetime_format = datetime_format
@@ -299,7 +299,11 @@ class FilenameToColumn:
         pattern = re.sub(r"\\\[(\w+)\\\]", r"(?P<\1>.+?)", escaped)
         return re.compile(pattern)
 
-    def extract_values_from_filename(self, filename: str | Path) -> dict[str, str] | None:
+    def has_capture(self, name: str) -> bool:
+        """Return whether the template or regex captures this placeholder."""
+        return name in self._compiled_regex.groupindex
+
+    def extract_values_from_filename(self, filename: str | Path) -> dict[str, str | None] | None:
         """Extract values from filename using template or regex.
 
         Args:
@@ -372,6 +376,10 @@ class Index:
         self.columns = columns
 
 
+class FilenameKeyConflictError(ValueError):
+    """A tabular output column conflicts with a filename-derived key."""
+
+
 class CrumpJob:
     """Configuration for a single sync job."""
 
@@ -413,11 +421,69 @@ class CrumpJob:
         self.filename_match = filename_match
         self.failure_mode = failure_mode
 
+        if self.filename_key_columns:
+            filename_keys = self.filename_key_columns
+            for key in filename_keys:
+                if (
+                    not filename_to_column
+                    or filename_to_column.columns.get(key.name) is not key
+                    or not filename_to_column.has_capture(key.name)
+                ):
+                    raise ValueError(f"Job '{name}' has no filename capture for ID '{key.name}'")
+
+            destinations = [col.db_column for col in [*id_mapping, *self.columns]]
+            assert filename_to_column is not None
+            destinations.extend(
+                col.db_column
+                for col in filename_to_column.columns.values()
+                if col not in filename_keys
+            )
+            for key in filename_keys:
+                if sum(col.lower() == key.db_column.lower() for col in destinations) != 1:
+                    raise ValueError(
+                        f"Job '{name}' has conflicting mappings for filename ID "
+                        f"column '{key.db_column}'"
+                    )
+
         # Validate sample_percentage
         if sample_percentage is not None and not (0 <= sample_percentage <= 100):
             raise ValueError(
                 f"sample_percentage must be between 0 and 100, got {sample_percentage}"
             )
+
+    @property
+    def filename_key_columns(self) -> list[FilenameColumnMapping]:
+        """Filename mappings referenced by the primary key, in key order."""
+        return [col for col in self.id_mapping if isinstance(col, FilenameColumnMapping)]
+
+    @property
+    def primary_keys(self) -> list[str]:
+        """Database columns of the primary key, in configuration order."""
+        return [col.db_column for col in self.id_mapping]
+
+    def validate_filename_keys(
+        self, filename: Path, values: Mapping[str, str | None] | None
+    ) -> None:
+        """Fail if the filename did not provide every required key component."""
+        for key in self.filename_key_columns:
+            value = values.get(key.name) if values else None
+            if value is None or value == "":
+                raise ValueError(
+                    f"Filename '{filename.name}' is missing required ID capture '{key.name}'"
+                )
+
+    def validate_filename_key_destinations(self, columns: Iterable[ColumnMapping]) -> None:
+        """Detect tabular output columns that would overwrite a filename-derived key."""
+        filename_keys = self.filename_key_columns
+        if not filename_keys:
+            return
+        destinations = {col.db_column.lower() for col in columns}
+        for key in filename_keys:
+            if key.db_column.lower() in destinations:
+                raise FilenameKeyConflictError(
+                    f"Tabular column conflicts with filename ID column '{key.db_column}'; "
+                    "rename or exclude the tabular column using 'columns'"
+                )
 
 
 class CrumpConfig:
@@ -686,18 +752,13 @@ class CrumpConfig:
         if "id_mapping" not in job_data:
             raise ValueError(f"Job '{name}' missing 'id_mapping'")
 
-        # Parse id_mapping as a dict: {csv_column: db_column} or {csv_column: {db_column: x, type: y}}
-        # Supports multiple columns for compound primary keys
+        # Parse the ordered ID mappings after filename_to_column is available.
         id_data = job_data["id_mapping"]
         if not isinstance(id_data, dict):
             raise ValueError(f"Job '{name}' id_mapping must be a dictionary")
 
         if len(id_data) < 1:
             raise ValueError(f"Job '{name}' id_mapping must have at least one mapping")
-
-        id_mapping = []
-        for csv_col, value in id_data.items():
-            id_mapping.append(CrumpConfig._parse_column_mapping(csv_col, value, name))
 
         # Parse columns as a dict: {csv_column: db_column} or {csv_column: {db_column: x, type: y}}
         columns = []
@@ -735,15 +796,14 @@ class CrumpConfig:
                     f"Job '{name}' filename_to_column cannot have both 'template' and 'regex'"
                 )
 
-            # Parse columns
-            if "columns" not in ftc_data or not ftc_data["columns"]:
-                raise ValueError(f"Job '{name}' filename_to_column must have 'columns'")
-
-            if not isinstance(ftc_data["columns"], dict):
+            # Parse columns. They may be omitted when every capture is only used as a
+            # filename ID; such captures are declared from id_mapping below.
+            ftc_columns_data = ftc_data.get("columns") or {}
+            if not isinstance(ftc_columns_data, dict):
                 raise ValueError(f"Job '{name}' filename_to_column columns must be a dictionary")
 
             ftc_columns = {}
-            for col_name, col_data in ftc_data["columns"].items():
+            for col_name, col_data in ftc_columns_data.items():
                 if isinstance(col_data, dict):
                     db_column = col_data.get("db_column")
                     data_type = col_data.get("type")
@@ -773,6 +833,30 @@ class CrumpConfig:
                 template=ftc_data.get("template"),
                 regex=ftc_data.get("regex"),
             )
+
+        id_mapping: list[ColumnMapping] = []
+        for source_name, value in id_data.items():
+            if isinstance(value, dict) and "source" in value:
+                if value != {"source": "filename"}:
+                    raise ValueError(
+                        f"Job '{name}' ID '{source_name}' must use only 'source: filename' "
+                        "to reference a filename column"
+                    )
+                if not filename_to_column or (
+                    source_name not in filename_to_column.columns
+                    and not filename_to_column.has_capture(source_name)
+                ):
+                    raise ValueError(f"Job '{name}' references unknown filename ID '{source_name}'")
+                # A capture used only as a key needs no entry under filename_to_column.columns
+                key = filename_to_column.columns.setdefault(
+                    source_name, FilenameColumnMapping(name=source_name)
+                )
+                id_mapping.append(key)
+            else:
+                id_mapping.append(CrumpConfig._parse_column_mapping(source_name, value, name))
+
+        if filename_to_column and not filename_to_column.columns:
+            raise ValueError(f"Job '{name}' filename_to_column must have 'columns'")
 
         # Parse optional indexes
         indexes = []
@@ -881,6 +965,9 @@ class CrumpConfig:
             # Build id_mapping dict (supports compound primary keys)
             id_mapping_dict: dict[str, Any] = {}
             for id_col in job.id_mapping:
+                if isinstance(id_col, FilenameColumnMapping):
+                    id_mapping_dict[id_col.name] = {"source": "filename"}
+                    continue
                 needs_extended = (
                     id_col.data_type
                     or id_col.nullable is not None
@@ -960,6 +1047,7 @@ class CrumpConfig:
                     ftc_dict["regex"] = job.filename_to_column.regex
 
                 ftc_columns_dict: dict[str, Any] = {}
+                filename_keys = job.filename_key_columns
                 for col_name, col_mapping in job.filename_to_column.columns.items():
                     col_dict: dict[str, Any] = {}
                     if col_mapping.db_column != col_mapping.name:
@@ -971,10 +1059,14 @@ class CrumpConfig:
                     if col_mapping.use_to_delete_old_rows:
                         col_dict["use_to_delete_old_rows"] = True
 
+                    # A key with default settings needs no entry: id_mapping declares it
+                    if not col_dict and col_mapping in filename_keys:
+                        continue
                     # If col_dict is empty, use None to keep it minimal
                     ftc_columns_dict[col_name] = col_dict if col_dict else None
 
-                ftc_dict["columns"] = ftc_columns_dict
+                if ftc_columns_dict:
+                    ftc_dict["columns"] = ftc_columns_dict
                 job_dict["filename_to_column"] = ftc_dict
 
             # Add indexes if present
@@ -1028,7 +1120,7 @@ def apply_row_transformations(
     row: dict[str, Any],
     sync_columns: list[ColumnMapping],
     filename_to_column: FilenameToColumn | None = None,
-    filename_values: dict[str, str] | None = None,
+    filename_values: Mapping[str, str | None] | None = None,
     parse_temporals: bool = True,
 ) -> dict[str, Any]:
     """Apply column transformations to a CSV row.

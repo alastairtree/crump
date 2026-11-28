@@ -50,6 +50,59 @@ id_mapping:
   product_id: product_id
 ```
 
+#### Compound Key with Filename Values
+
+Use `{source: filename}` in `id_mapping` to reference a template placeholder or
+regex named group. Other `id_mapping` entries still refer to input columns or
+computed values. The key's database column name and type come from its entry in
+`filename_to_column.columns`; the entry is optional, and without one the column is
+named after the placeholder and its type is detected automatically.
+
+```yaml
+jobs:
+  sales:
+    target_table: sales
+    id_mapping:
+      sale_id: id
+      date: {source: filename}
+    filename_to_column:
+      template: "sales_[date].csv"
+      columns:
+        date:
+          db_column: sale_date
+          type: date
+          use_to_delete_old_rows: true
+```
+
+```bash
+crump sync sales_2024-01-15.csv --config crump_config.yml --job sales
+crump sync sales_2024-01-16.csv --config crump_config.yml --job sales
+```
+
+With the key `(id, sale_date)`, the same `sale_id` can occur on both dates.
+When `use_to_delete_old_rows` is enabled, cleanup (including in a dry run)
+only considers rows that match **every** filename-derived key value and every
+marked cleanup column. Otherwise syncing one file would delete the rows of every
+other file that shares its cleanup value. A missing or empty required filename
+capture stops the sync. For CDF input, filename keys are read from the original
+CDF filename.
+
+A key-only placeholder needs no `columns` entry:
+
+```yaml
+jobs:
+  sales:
+    target_table: sales
+    id_mapping:
+      sale_id: id
+      day: {source: filename}
+    filename_to_column:
+      template: "sales_[day].csv"
+```
+
+Crump does not change an existing primary key. If the target table uses the old
+key, migrate it or choose a new target table before syncing.
+
 ### Column Mapping
 
 The `columns` field maps CSV columns to database columns:
@@ -485,6 +538,9 @@ When `use_to_delete_old_rows: true` is set, crump will:
 2. Add it to all synced rows
 3. Delete rows with matching values but IDs not in the current CSV
 4. Preserve rows with different values
+
+An input file with no valid rows deletes nothing, so an empty or truncated file
+cannot wipe existing data. To remove all rows for a value, delete them directly.
 
 **Example Workflow:**
 

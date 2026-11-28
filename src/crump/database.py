@@ -7,7 +7,7 @@ import logging
 import re
 import sqlite3
 from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from copy import copy
 from itertools import islice
 from pathlib import Path
@@ -156,6 +156,10 @@ class DatabaseBackend(Protocol):
         Returns:
             Dictionary mapping lowercase column names to their SQL type strings.
         """
+        ...
+
+    def get_primary_key(self, table_name: str) -> set[str] | None:
+        """Return primary key columns, or None if the table does not exist."""
         ...
 
     def add_column(self, table_name: str, column_name: str, column_type: str) -> None:
@@ -346,6 +350,21 @@ class PostgreSQLBackend:
                 col_types[col_name] = data_type
         return col_types
 
+    def get_primary_key(self, table_name: str) -> set[str] | None:
+        """Read the primary key of the relation resolved by the sync search path."""
+        rows = self.fetchall(
+            """
+            SELECT a.attname
+            FROM pg_catalog.pg_class AS t
+            LEFT JOIN pg_catalog.pg_constraint AS c ON c.conrelid = t.oid AND c.contype = 'p'
+            LEFT JOIN pg_catalog.pg_attribute AS a
+                ON a.attrelid = t.oid AND a.attnum = ANY(c.conkey)
+            WHERE t.oid = pg_catalog.to_regclass(%s)
+            """,
+            (sql.Identifier(table_name).as_string(self.conn),),
+        )
+        return {row[0] for row in rows if row[0] is not None} if rows else None
+
     def add_column(self, table_name: str, column_name: str, column_type: str) -> None:
         """Add a new column to an existing table."""
         query = sql.SQL("ALTER TABLE {} ADD COLUMN {} {}").format(
@@ -375,18 +394,22 @@ class PostgreSQLBackend:
         columns = list(row_data.keys())
         values = tuple(row_data.values())
 
-        insert_query = sql.SQL(
-            "INSERT INTO {} ({}) VALUES ({}) ON CONFLICT ({}) DO UPDATE SET {}"
-        ).format(
+        updates = [
+            sql.SQL("{} = EXCLUDED.{}").format(sql.Identifier(col), sql.Identifier(col))
+            for col in columns
+            if col not in conflict_columns
+        ]
+        conflict_action = (
+            sql.SQL("DO UPDATE SET {}").format(sql.SQL(", ").join(updates))
+            if updates
+            else sql.SQL("DO NOTHING")
+        )
+        insert_query = sql.SQL("INSERT INTO {} ({}) VALUES ({}) ON CONFLICT ({}) {}").format(
             sql.Identifier(table_name),
             sql.SQL(", ").join(sql.Identifier(col) for col in columns),
             sql.SQL(", ").join(sql.Placeholder() * len(values)),
             sql.SQL(", ").join(sql.Identifier(col) for col in conflict_columns),
-            sql.SQL(", ").join(
-                sql.SQL("{} = EXCLUDED.{}").format(sql.Identifier(col), sql.Identifier(col))
-                for col in columns
-                if col not in conflict_columns
-            ),
+            conflict_action,
         )
         self.execute(insert_query.as_string(self.conn), values)
         self.commit()
@@ -700,6 +723,11 @@ class SQLiteBackend:
             col_types[col_name] = col_type
         return col_types
 
+    def get_primary_key(self, table_name: str) -> set[str] | None:
+        """Read the primary key of the SQLite table, if present."""
+        rows = self.fetchall("SELECT name, pk FROM pragma_table_info(?)", (table_name,))
+        return {row[0].lower() for row in rows if row[1]} if rows else None
+
     def add_column(self, table_name: str, column_name: str, column_type: str) -> None:
         """Add a new column to an existing table."""
         query = f'ALTER TABLE "{table_name}" ADD COLUMN "{column_name}" {column_type}'
@@ -735,7 +763,8 @@ class SQLiteBackend:
         conflict_cols_str = ", ".join(f'"{col}"' for col in conflict_columns)
 
         query = f'INSERT INTO "{table_name}" ({columns_str}) VALUES ({placeholders}) '
-        query += f"ON CONFLICT ({conflict_cols_str}) DO UPDATE SET {update_str}"
+        query += f"ON CONFLICT ({conflict_cols_str}) "
+        query += f"DO UPDATE SET {update_str}" if update_str else "DO NOTHING"
 
         self.execute(query, values)
         self.commit()
@@ -1048,6 +1077,8 @@ class DatabaseConnection:
         """
         id_csv_columns = set()
         for id_col in job.id_mapping:
+            if isinstance(id_col, FilenameColumnMapping):
+                continue
             # Skip validation for custom functions (no csv_column)
             if id_col.csv_column is None:
                 # Custom function - validate input columns instead
@@ -1067,7 +1098,7 @@ class DatabaseConnection:
 
     def _determine_sync_columns(
         self, job: CrumpJob, csv_columns: set[str], id_csv_columns: set[str]
-    ) -> list[Any]:
+    ) -> list[ColumnMapping]:
         """Determine which columns to sync based on job configuration.
 
         When failure_mode is set, missing CSV columns for configured mappings are
@@ -1085,9 +1116,10 @@ class DatabaseConnection:
         Raises:
             ValueError: If a custom function input column is missing from CSV
         """
+        sync_columns = [col for col in job.id_mapping if not isinstance(col, FilenameColumnMapping)]
         if job.columns:
             # Specific columns defined
-            sync_columns = list(job.id_mapping) + job.columns
+            sync_columns.extend(job.columns)
             for col_mapping in job.columns:
                 # Skip validation for custom functions (no csv_column)
                 if col_mapping.csv_column is None:
@@ -1110,11 +1142,11 @@ class DatabaseConnection:
                     )
         else:
             # Sync all columns
-            sync_columns = list(job.id_mapping)
             for csv_col in csv_columns:
                 if csv_col not in id_csv_columns:
                     sync_columns.append(ColumnMapping(csv_col, csv_col))
 
+        job.validate_filename_key_destinations(sync_columns)
         return sync_columns
 
     def _build_column_definitions(self, sync_columns: list[Any], job: CrumpJob) -> dict[str, str]:
@@ -1144,8 +1176,11 @@ class DatabaseConnection:
 
         # Add filename_to_column columns if configured
         if job.filename_to_column:
+            filename_keys = job.filename_key_columns
             for col_mapping in job.filename_to_column.columns.values():
                 sql_type = self.backend.map_data_type(col_mapping.data_type)
+                if col_mapping in filename_keys:
+                    sql_type += " NOT NULL"
                 columns_def[col_mapping.db_column] = sql_type
 
         return columns_def
@@ -1780,7 +1815,7 @@ class DatabaseConnection:
         reader: Any,
         job: CrumpJob,
         sync_columns: list[Any],
-        filename_values: dict[str, str] | None = None,
+        filename_values: Mapping[str, str | None] | None = None,
     ) -> Iterator[dict[str, Any]]:
         """Use identical selection, transformation and validation in preview and sync."""
         rows_synced = 0
@@ -1844,9 +1879,9 @@ class DatabaseConnection:
         job: CrumpJob,
         sync_columns: list[Any],
         primary_keys: list[str],
-        filename_values: dict[str, str] | None = None,
+        filename_values: Mapping[str, str | None] | None = None,
     ) -> tuple[int, set[tuple]]:
-        """Process and upsert tabular file rows into database.
+        """Validate tabular rows and upsert them into the database.
 
         Args:
             reader: Tabular file reader (DictReader interface)
@@ -1862,7 +1897,7 @@ class DatabaseConnection:
         synced_ids: set[tuple] = set()
         for validated in self._iter_validated_rows(reader, job, sync_columns, filename_values):
             self.upsert_row(job.target_table, primary_keys, validated)
-            synced_ids.add(tuple(validated[col.db_column] for col in job.id_mapping))
+            synced_ids.add(tuple(validated[key] for key in primary_keys))
             rows_synced += 1
 
         return rows_synced, synced_ids
@@ -1872,7 +1907,7 @@ class DatabaseConnection:
         file_path: Path,
         job: CrumpJob,
         sync_columns: list[Any],
-        filename_values: dict[str, str] | None = None,
+        filename_values: Mapping[str, str | None] | None = None,
     ) -> tuple[int, set[tuple]]:
         """Count CSV rows and track synced IDs without database operations.
 
@@ -1890,12 +1925,13 @@ class DatabaseConnection:
         """
         row_count = 0
         synced_ids: set[tuple] = set()
+        primary_keys = job.primary_keys
 
         file_format = _detect_file_format(file_path)
 
         with create_reader(file_path, file_format=file_format) as reader:
             for row_data in self._iter_validated_rows(reader, job, sync_columns, filename_values):
-                synced_ids.add(tuple(row_data[col.db_column] for col in job.id_mapping))
+                synced_ids.add(tuple(row_data[key] for key in primary_keys))
                 row_count += 1
 
         return row_count, synced_ids
@@ -1988,32 +2024,38 @@ class DatabaseConnection:
             )
 
     def _resolve_filename_columns(
-        self, file_path: Path, job: CrumpJob, filename_values: dict[str, str] | None
+        self, file_path: Path, job: CrumpJob, filename_values: Mapping[str, str | None] | None
     ) -> CrumpJob:
         resolved = copy(job)
         if job.filename_to_column and filename_values:
             resolved.filename_to_column = copy(job.filename_to_column)
-            resolved.filename_to_column.columns = {
-                name: copy(col) for name, col in job.filename_to_column.columns.items()
+            copies = {name: copy(col) for name, col in job.filename_to_column.columns.items()}
+            resolved.filename_to_column.columns = copies
+            # Filename ID mappings are the same objects as the filename columns; keep them so.
+            by_identity = {
+                id(col): copies[name] for name, col in job.filename_to_column.columns.items()
             }
+            resolved.id_mapping = [by_identity.get(id(col), col) for col in job.id_mapping]
             existing_non_temporal = self._existing_non_temporal_columns(job.target_table)
-            for name, col in resolved.filename_to_column.columns.items():
+            for name, col in copies.items():
                 if col.data_type is None and col.db_column.lower() in existing_non_temporal:
                     continue
-                if name in filename_values:
+                value = filename_values.get(name)
+                if value is not None:
                     inference = TemporalInference()
-                    inference.add(filename_values[name])
+                    inference.add(value)
                     self._resolve_temporal_mapping(file_path, col, inference, f"filename[{name}]")
         return resolved
 
     def _filename_delete_values(
-        self, job: CrumpJob, filename_values: dict[str, str]
+        self, job: CrumpJob, filename_values: Mapping[str, str | None]
     ) -> dict[str, Any]:
         """Cleanup filter values, validated and normalised exactly as inserted values are.
 
-        Values are checked with the strict row validation, so a value that would be
-        truncated, nulled or rejected on insert fails before any writes instead of
-        producing a filter that can never match.
+        Filename ID values and cleanup values are checked with the strict row validation,
+        so a value that would be truncated, nulled or rejected on insert fails before any
+        writes instead of producing a key or filter that can never match. When the
+        primary key includes filename values, cleanup is also scoped to every one of them.
 
         Older versions stored filename values as extracted (e.g. ``20240229``), so where
         a column can still hold that spelling (any SQLite column, or a PostgreSQL text
@@ -2021,26 +2063,51 @@ class DatabaseConnection:
         """
         if not job.filename_to_column:
             return {}
+        keys = {col.name: col for col in job.filename_key_columns}
         cleanup = {
             name: col
             for name, col in job.filename_to_column.columns.items()
-            if col.use_to_delete_old_rows and name in filename_values
+            if col.use_to_delete_old_rows and (keys or name in filename_values)
         }
-        if not cleanup:
+        checked = {**cleanup, **keys}
+        if not checked:
             return {}
         strict_job = copy(job)
         strict_job.failure_mode = FailureMode.STRICT
         strict_job.filename_to_column = copy(job.filename_to_column)
-        strict_job.filename_to_column.columns = cleanup
-        raw = {col.db_column: filename_values[name] for name, col in cleanup.items()}
+        strict_job.filename_to_column.columns = checked
+        raw = {col.db_column: filename_values.get(name) for name, col in checked.items()}
         problems: dict[str, int] = {}
         validated = self._validate_and_fix_row(dict(raw), [], strict_job, {}, problems)
+        if validated is not None:
+            # Row validation leaves malformed numbers for the database to reject, which
+            # would only happen after schema changes (or never, in SQLite).
+            for col in checked.values():
+                numeric = (
+                    int
+                    if self._get_integer_range(col.data_type)
+                    else float
+                    if (col.data_type or "").lower().strip() in ("float", "double")
+                    else None
+                )
+                value = validated.get(col.db_column)
+                if numeric is None or value is None:
+                    continue
+                try:
+                    numeric(str(value).strip())
+                except ValueError:
+                    problems[f"skip:invalid_{numeric.__name__}:{col.db_column}"] = 1
+                    validated = None
+                    break
         if validated is None or any(validated.get(col) is None for col in raw):
             details = ", ".join(key.removeprefix("skip:") for key in problems) or "empty value"
+            kind = "cleanup" if cleanup else "ID"
             raise ValueError(
-                f"Filename cleanup values {raw} are not valid for their configured types "
+                f"Filename {kind} values {raw} are not valid for their configured types "
                 f"({details}); refusing to sync or delete records"
             )
+        if not cleanup:
+            return {}
 
         existing = (
             self.get_existing_columns_with_types(job.target_table)
@@ -2051,6 +2118,7 @@ class DatabaseConnection:
         values: dict[str, Any] = {}
         for column, raw_value in raw.items():
             value = validated[column]
+            assert raw_value is not None
             stored_type = existing.get(column.lower(), "").lower()
             can_hold_raw = stored_type and (
                 is_sqlite or stored_type == "text" or stored_type.startswith("varchar")
@@ -2131,7 +2199,7 @@ class DatabaseConnection:
 
     def _prepare_sync(
         self, file_path: Path, job: CrumpJob
-    ) -> tuple[set[str], list[Any], dict[str, str]]:
+    ) -> tuple[list[ColumnMapping], dict[str, str]]:
         """Prepare for sync by validating CSV and building schema definitions.
 
         Args:
@@ -2139,7 +2207,7 @@ class DatabaseConnection:
             job: CrumpJob configuration
 
         Returns:
-            Tuple of (csv_columns, sync_columns, columns_def)
+            Tuple of (sync_columns, columns_def)
 
         Raises:
             FileNotFoundError: If CSV file doesn't exist
@@ -2160,24 +2228,53 @@ class DatabaseConnection:
         sync_columns = [
             copy(col) for col in self._determine_sync_columns(job, csv_columns, id_csv_columns)
         ]
-        primary_keys = {col.db_column for col in job.id_mapping}
+        primary_keys = set(job.primary_keys)
         for col in sync_columns:
             if col.db_column in primary_keys:
                 col.nullable = False
         self._resolve_temporal_columns(file_path, job.target_table, sync_columns)
-        self._check_legacy_temporal_keys(job.target_table, sync_columns, primary_keys)
+        self._check_legacy_temporal_keys(
+            job.target_table, [*sync_columns, *job.filename_key_columns], primary_keys
+        )
 
         # Build schema definitions
         columns_def = self._build_column_definitions(sync_columns, job)
         self._check_temporal_schema(job.target_table, columns_def)
 
-        return csv_columns, sync_columns, columns_def
+        return sync_columns, columns_def
+
+    @staticmethod
+    def _resolve_filename_keys(
+        file_path: Path, job: CrumpJob, filename_values: Mapping[str, str | None] | None
+    ) -> Mapping[str, str | None] | None:
+        if job.filename_key_columns and job.filename_to_column:
+            if filename_values is None:
+                filename_values = job.filename_to_column.extract_values_from_filename(file_path)
+            job.validate_filename_keys(file_path, filename_values)
+        return filename_values
+
+    def _check_target_key(self, job: CrumpJob) -> bool:
+        """Check target existence and reject incompatible keys before schema changes."""
+        if not job.filename_key_columns:
+            return self.table_exists(job.target_table)
+        if not self.backend:
+            raise RuntimeError("Database connection not established")
+        existing_key = self.backend.get_primary_key(job.target_table)
+        expected_key = set(job.primary_keys)
+        if isinstance(self.backend, SQLiteBackend):
+            expected_key = {col.lower() for col in expected_key}
+        if existing_key is not None and existing_key != expected_key:
+            raise ValueError(
+                f"Table '{job.target_table}' has an incompatible primary key. "
+                f"Migrate it to ({', '.join(job.primary_keys)}) or choose a new target table."
+            )
+        return existing_key is not None
 
     def sync_tabular_file_dry_run(
         self,
         file_path: Path,
         job: CrumpJob,
-        filename_values: dict[str, str] | None = None,
+        filename_values: Mapping[str, str | None] | None = None,
     ) -> DryRunSummary:
         """Simulate syncing a CSV file without making database changes.
 
@@ -2193,16 +2290,17 @@ class DatabaseConnection:
             FileNotFoundError: If CSV file doesn't exist
             ValueError: If CSV is invalid or columns don't match
         """
+        filename_values = self._resolve_filename_keys(file_path, job, filename_values)
         job = self._resolve_filename_columns(file_path, job, filename_values)
-        delete_key_values = self._filename_delete_values(job, filename_values or {})
         summary = DryRunSummary()
         summary.table_name = job.target_table
 
-        # Prepare sync (validates CSV and builds schema)
-        csv_columns, sync_columns, columns_def = self._prepare_sync(file_path, job)
+        # Check the key and what schema changes would be made
+        summary.table_exists = self._check_target_key(job)
+        delete_key_values = self._filename_delete_values(job, filename_values or {})
 
-        # Check what schema changes would be made
-        summary.table_exists = self.table_exists(job.target_table)
+        # Prepare sync (validates CSV and builds schema)
+        sync_columns, columns_def = self._prepare_sync(file_path, job)
 
         if summary.table_exists:
             # Check for new columns
@@ -2229,14 +2327,10 @@ class DatabaseConnection:
         )
 
         # Count stale records that would be deleted
-        if job.filename_to_column and filename_values and summary.table_exists:
-            delete_key_columns = job.filename_to_column.get_delete_key_columns()
-            if delete_key_columns:
-                # Build compound key values from filename_values
-                id_columns = [id_col.db_column for id_col in job.id_mapping]
-                summary.rows_to_delete = self.count_stale_records_compound(
-                    job.target_table, id_columns, delete_key_values, synced_ids
-                )
+        if delete_key_values and summary.table_exists:
+            summary.rows_to_delete = self.count_stale_records_compound(
+                job.target_table, job.primary_keys, delete_key_values, synced_ids
+            )
 
         return summary
 
@@ -2244,7 +2338,7 @@ class DatabaseConnection:
         self,
         file_path: Path,
         job: CrumpJob,
-        filename_values: dict[str, str] | None = None,
+        filename_values: Mapping[str, str | None] | None = None,
         enable_history: bool = False,
     ) -> int:
         """Sync a CSV file to the database using job configuration.
@@ -2272,13 +2366,16 @@ class DatabaseConnection:
         success = False
 
         try:
+            filename_values = self._resolve_filename_keys(file_path, job, filename_values)
             job = self._resolve_filename_columns(file_path, job, filename_values)
+            # Reject an incompatible existing key before validating or changing anything
+            self._check_target_key(job)
             delete_key_values = self._filename_delete_values(job, filename_values or {})
             # Prepare sync (validates CSV and builds schema)
-            csv_columns, sync_columns, columns_def = self._prepare_sync(file_path, job)
+            sync_columns, columns_def = self._prepare_sync(file_path, job)
 
             # Build schema and setup table
-            primary_keys = [id_col.db_column for id_col in job.id_mapping]
+            primary_keys = job.primary_keys
             logger.debug(f"Primary keys for table {job.target_table}: {primary_keys}")
             schema_changed = self._setup_table_schema(job, columns_def, primary_keys)
 
@@ -2290,14 +2387,10 @@ class DatabaseConnection:
                 )
 
             # Clean up stale records
-            if job.filename_to_column and filename_values:
-                delete_key_columns = job.filename_to_column.get_delete_key_columns()
-                if delete_key_columns:
-                    # Build compound key values from filename_values
-                    id_columns = [id_col.db_column for id_col in job.id_mapping]
-                    rows_deleted = self.delete_stale_records_compound(
-                        job.target_table, id_columns, delete_key_values, synced_ids
-                    )
+            if delete_key_values:
+                rows_deleted = self.delete_stale_records_compound(
+                    job.target_table, primary_keys, delete_key_values, synced_ids
+                )
 
             success = True
             return rows_synced
@@ -2334,7 +2427,7 @@ def sync_file_to_db(
     file_path: Path,
     job: CrumpJob,
     db_connection_string: str,
-    filename_values: dict[str, str] | None = None,
+    filename_values: Mapping[str, str | None] | None = None,
     enable_history: bool = False,
 ) -> int:
     """Sync a tabular file (CSV or Parquet) to database.
@@ -2357,7 +2450,7 @@ def sync_file_to_db_dry_run(
     file_path: Path,
     job: CrumpJob,
     db_connection_string: str,
-    filename_values: dict[str, str] | None = None,
+    filename_values: Mapping[str, str | None] | None = None,
 ) -> DryRunSummary:
     """Simulate syncing a tabular file without making database changes.
 

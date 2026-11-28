@@ -8,6 +8,10 @@
 - `time`, `timetz` and `timestamptz` column types.
 - Optional `datetime_format` (Python `strptime` format) on columns, primary keys and
   filename mappings.
+- Filename values can be part of a compound primary key: reference a filename
+  placeholder from `id_mapping` with `{source: filename}`. Upserts use the full key, and
+  stale-row cleanup (including dry runs) is scoped to every filename key value. See
+  [Compound Key with Filename Values](configuration.md#compound-key-with-filename-values).
 
 ### Upgrading
 
@@ -20,6 +24,9 @@
 - Date/time primary keys are stored in one canonical form. If an existing text key
   column (e.g. SQLite) holds another spelling such as `20240229`, sync stops before
   writing so rows are not duplicated; migrate the keys first.
+- An invalid or missing filename key value stops the sync before anything is written.
+- Crump never changes an existing table's primary key; a sync whose key does not match
+  stops with an error.
 
 ## 0.9.0
 
