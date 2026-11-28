@@ -24,7 +24,13 @@ from crump.config import (
     apply_row_transformations,
 )
 from crump.tabular_file import create_reader
-from crump.temporal import TemporalInference, is_temporal, parse_automatic, parse_temporal
+from crump.temporal import (
+    CANONICAL_PATTERNS,
+    TemporalInference,
+    is_temporal,
+    parse_automatic,
+    parse_temporal,
+)
 
 
 def _detect_file_format(file_path: Path) -> Any:
@@ -109,17 +115,6 @@ def _sqlite_filter(filter_columns: dict[str, Any]) -> tuple[list[str], list[Any]
         conditions.append(f'"{col}" IN ({", ".join("?" * len(values))})')
         params.extend(values)
     return conditions, params
-
-
-# Canonical text written for temporal values (see crump.temporal.parse_temporal).
-_CANONICAL_TEMPORAL_PATTERNS = {
-    "date": r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
-    "datetime": r"^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{6})?$",
-    "timestamp": r"^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{6})?$",
-    "timestamptz": (r"^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{6})?\+00:00$"),
-    "time": r"^[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{6})?$",
-    "timetz": r"^[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{6})?[+-][0-9]{2}:[0-9]{2}$",
-}
 
 
 class DatabaseBackend(Protocol):
@@ -2086,7 +2081,7 @@ class DatabaseConnection:
             stored_type = existing.get(col.db_column.lower(), "").lower()
             if not (stored_type == "text" or stored_type.startswith("varchar")):
                 continue
-            pattern = _CANONICAL_TEMPORAL_PATTERNS[col.data_type.lower().strip()]
+            pattern = CANONICAL_PATTERNS[col.data_type.lower().strip()]
             if isinstance(backend, PostgreSQLBackend):
                 query = sql.SQL(
                     "SELECT {col} FROM {table} WHERE {col} IS NOT NULL AND {col} !~ %s LIMIT 1"

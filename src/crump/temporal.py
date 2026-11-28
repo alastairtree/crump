@@ -37,6 +37,32 @@ _TIME_PATTERN = re.compile(
 )
 
 
+class InvalidTemporalValueError(ValueError):
+    """A value in a temporal column could not be parsed."""
+
+
+_DATE = r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
+_TIME = r"[0-9]{2}:[0-9]{2}:[0-9]{2}"
+# isoformat() prints six fraction digits only when microseconds are non-zero.
+_FRACTION = r"(\.(?!0{6})[0-9]{6})?"
+# utcoffset is printed as +HH:MM, adding :SS or :SS.ffffff only when non-zero;
+# a zero offset is always +00:00, never -00:00.
+_OFFSET = (
+    r"(?!-00:00$)[+-][0-9]{2}:[0-9]{2}"
+    r"(:(?!00$)[0-9]{2}|:[0-9]{2}\.(?!0{6})[0-9]{6})?"
+)
+CANONICAL_PATTERNS = {
+    "date": f"^{_DATE}$",
+    "datetime": f"^{_DATE} {_TIME}{_FRACTION}$",
+    "timestamp": f"^{_DATE} {_TIME}{_FRACTION}$",
+    "timestamptz": f"^{_DATE} {_TIME}{_FRACTION}\\+00:00$",
+    "time": f"^{_TIME}{_FRACTION}$",
+    "timetz": f"^{_TIME}{_FRACTION}{_OFFSET}$",
+}
+"""Regular expressions (valid in Python and PostgreSQL) matching exactly the text
+that :func:`parse_temporal` writes for each type."""
+
+
 @dataclass(frozen=True)
 class ParsedTemporal:
     value: date | datetime | time

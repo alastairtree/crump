@@ -10,6 +10,7 @@ import pytest
 from crump.cdf_extractor import extract_cdf_to_tabular_file, extract_cdf_with_config
 from crump.cdf_reader import read_cdf_variables
 from crump.config import ColumnMapping, CrumpJob
+from crump.temporal import InvalidTemporalValueError
 
 
 @pytest.fixture
@@ -882,3 +883,40 @@ def test_extract_cdf_to_parquet_data_fidelity(solo_cdf_file: Path, tmp_path: Pat
                     f"in {pq_result.output_file.name}: "
                     f"parquet={pq_row[col]!r}, csv={csv_row[col]!r}"
                 )
+
+
+def _vector_job(vector_type: str | None) -> CrumpJob:
+    return CrumpJob(
+        name="test_job",
+        target_table="test_table",
+        id_mapping=[ColumnMapping(csv_column="epoch", db_column="id")],
+        columns=[
+            ColumnMapping(csv_column="vectors_x", db_column="vector_x", data_type=vector_type)
+        ],
+    )
+
+
+def test_extract_cdf_with_config_reports_invalid_temporal_value(
+    imap_cdf_file: Path, tmp_path: Path
+) -> None:
+    """Bad temporal data is an error, not a mapping mismatch, and leaves no output."""
+    with pytest.raises(InvalidTemporalValueError, match=r"row 1: Invalid time value .* 'vector_x'"):
+        extract_cdf_with_config(
+            cdf_file_path=imap_cdf_file, output_dir=tmp_path, job=_vector_job("time")
+        )
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_extract_cdf_with_config_invalid_temporal_keeps_appended_file(
+    imap_cdf_file: Path, tmp_path: Path
+) -> None:
+    (result,) = extract_cdf_with_config(
+        cdf_file_path=imap_cdf_file, output_dir=tmp_path, job=_vector_job(None)
+    )
+    original = result.output_file.read_bytes()
+    with pytest.raises(InvalidTemporalValueError):
+        extract_cdf_with_config(
+            cdf_file_path=imap_cdf_file, output_dir=tmp_path, job=_vector_job("time"), append=True
+        )
+    assert result.output_file.read_bytes() == original
+    assert [path.name for path in tmp_path.iterdir()] == [result.output_file.name]

@@ -11,7 +11,12 @@ from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
-from crump.temporal import is_temporal, parse_temporal, validate_datetime_format
+from crump.temporal import (
+    InvalidTemporalValueError,
+    is_temporal,
+    parse_temporal,
+    validate_datetime_format,
+)
 
 
 class FailureMode(enum.Enum):
@@ -1092,8 +1097,14 @@ def apply_row_transformations(
             value = row_data.get(mapping.db_column)
             if is_temporal(mapping.data_type) and value is not None and str(value).strip():
                 assert mapping.data_type is not None
-                row_data[mapping.db_column] = parse_temporal(
-                    value, mapping.data_type, mapping.datetime_format
-                )
+                try:
+                    row_data[mapping.db_column] = parse_temporal(
+                        value, mapping.data_type, mapping.datetime_format
+                    )
+                except (ValueError, OverflowError) as exc:
+                    raise InvalidTemporalValueError(
+                        f"Invalid {mapping.data_type} value {value!r} for column "
+                        f"'{mapping.db_column}': {exc}"
+                    ) from exc
 
     return row_data

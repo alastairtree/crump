@@ -2,6 +2,7 @@
 
 import csv
 import logging
+import re
 from pathlib import Path
 from urllib.parse import quote
 
@@ -12,7 +13,12 @@ from click.testing import CliRunner
 from crump.cli import main
 from crump.config import ColumnMapping, CrumpConfig, apply_row_transformations
 from crump.database import DatabaseConnection
-from crump.temporal import iso_to_epoch_ns, parse_automatic, parse_temporal
+from crump.temporal import (
+    CANONICAL_PATTERNS,
+    iso_to_epoch_ns,
+    parse_automatic,
+    parse_temporal,
+)
 from crump.type_detection import detect_column_type
 from tests.db_test_utils import execute_query
 
@@ -611,7 +617,48 @@ def test_cli_boolean_cleanup_key_counted_once(
     assert [row[0] for row in execute_query(db_url, "SELECT id FROM dates")] == [1]
 
 
-def _temporal_key_job(tmp_path: Path) -> Path:
+@pytest.mark.parametrize(
+    ("kind", "value", "canonical"),
+    [
+        ("date", "2024-02-29", True),
+        ("date", "20240229", False),
+        ("datetime", "2024-02-29 12:30:00", True),
+        ("datetime", "2024-02-29 12:30:00.100000", True),
+        ("datetime", "2024-02-29 12:30:00.000000", False),
+        ("datetime", "2024-02-29T12:30:00", False),
+        ("timestamptz", "2024-02-29 12:30:00+00:00", True),
+        ("timestamptz", "2024-02-29 12:30:00.000000+00:00", False),
+        ("timestamptz", "2024-02-29 12:30:00-00:00", False),
+        ("timestamptz", "2024-02-29 12:30:00+02:00", False),
+        ("time", "12:30:00", True),
+        ("time", "12:30:00.000001", True),
+        ("time", "12:30", False),
+        ("timetz", "12:30:00+02:00", True),
+        ("timetz", "12:30:00-02:30", True),
+        ("timetz", "12:30:00+00:00", True),
+        ("timetz", "12:30:00-00:00", False),
+        ("timetz", "12:30:00+00:00:30", True),
+        ("timetz", "12:30:00+00:00:00", False),
+        ("timetz", "12:30:00+00:00:00.500000", True),
+        ("timetz", "12:30:00+00:00:30.000000", False),
+    ],
+)
+def test_canonical_patterns_match_parser_output(kind: str, value: str, canonical: bool) -> None:
+    """The legacy-key guard must accept exactly the spellings the parser writes."""
+    assert bool(re.search(CANONICAL_PATTERNS[kind], value)) is canonical
+    if canonical:
+        fmt = "%H:%M:%S%z" if kind == "timetz" and value.count(":") > 3 else None
+        assert parse_temporal(value, kind, fmt) == value
+
+
+@pytest.mark.parametrize("value", ["12:30:00+00:00:30", "12:30:00-01:00:30.500000"])
+def test_canonical_timetz_with_offset_seconds_round_trips(value: str) -> None:
+    parsed = parse_temporal(value, "timetz", "%H:%M:%S%z")
+    assert parsed == value
+    assert re.search(CANONICAL_PATTERNS["timetz"], parsed)
+
+
+def _temporal_key_job(tmp_path: Path, kind: str) -> Path:
     config = tmp_path / "keys.yml"
     config.write_text(
         yaml.safe_dump(
@@ -619,7 +666,7 @@ def _temporal_key_job(tmp_path: Path) -> Path:
                 "jobs": {
                     "dates": {
                         "target_table": "dates",
-                        "id_mapping": {"day": {"db_column": "day", "type": "date"}},
+                        "id_mapping": {"day": {"db_column": "day", "type": kind}},
                         "columns": {"value": "value"},
                     }
                 }
@@ -629,9 +676,25 @@ def _temporal_key_job(tmp_path: Path) -> Path:
     return config
 
 
-@pytest.mark.parametrize(("stored", "ok"), [("20240229", False), ("2024-02-29", True)])
+@pytest.mark.parametrize(
+    ("kind", "source_value", "stored", "ok"),
+    [
+        ("date", "20240229", "20240229", False),
+        ("date", "20240229", "2024-02-29", True),
+        ("datetime", "2024-02-29T12:30:00", "2024-02-29 12:30:00.000000", False),
+        ("datetime", "2024-02-29T12:30:00", "2024-02-29 12:30:00", True),
+        ("timetz", "12:30:00Z", "12:30:00-00:00", False),
+        ("timetz", "12:30:00Z", "12:30:00+00:00", True),
+    ],
+)
 def test_cli_legacy_text_temporal_key(
-    cli_runner: CliRunner, tmp_path: Path, db_url: str, stored: str, ok: bool
+    cli_runner: CliRunner,
+    tmp_path: Path,
+    db_url: str,
+    kind: str,
+    source_value: str,
+    stored: str,
+    ok: bool,
 ) -> None:
     """Non-canonical existing keys would be duplicated by canonical upserts."""
     with DatabaseConnection(db_url) as db:
@@ -639,13 +702,14 @@ def test_cli_legacy_text_temporal_key(
         db.backend.execute(f"INSERT INTO dates VALUES ('{stored}', 'old')")
         db.backend.commit()
     source = tmp_path / "readings.csv"
-    source.write_text("day,value\n20240229,new\n")
+    source.write_text(f"day,value\n{source_value},new\n")
+    config = _temporal_key_job(tmp_path, kind)
     for dry in (True, False):
-        result = invoke_sync(cli_runner, source, _temporal_key_job(tmp_path), db_url, dry)
+        result = invoke_sync(cli_runner, source, config, db_url, dry)
         assert (result.exit_code == 0) is ok, result.output
         if not ok:
-            assert "not in canonical date form" in " ".join(result.output.split())
-    expected = [("2024-02-29", "new")] if ok else [("20240229", "old")]
+            assert f"not in canonical {kind} form" in " ".join(result.output.split())
+    expected = [(stored, "new")] if ok else [(stored, "old")]
     rows = execute_query(db_url, "SELECT day, value FROM dates")
     assert [tuple(row) for row in rows] == expected
 
