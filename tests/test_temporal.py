@@ -121,6 +121,7 @@ def test_mixed_formats_and_kinds() -> None:
         ("12/31/2024 2:30 PM", "datetime", "%m/%d/%Y %I:%M %p", "2024-12-31 14:30:00"),
         ("2024|02|29 14h30m45s", "datetime", "%Y|%m|%d %Hh%Mm%Ss", "2024-02-29 14:30:45"),
         ("2024060", "date", "%Y%j", "2024-02-29"),
+        ("15/03", "date", "%d/%m", "1900-03-15"),
         ("02:30 PM", "time", "%I:%M %p", "14:30:00"),
         ("20240229T143045+0200", "timestamptz", "%Y%m%dT%H%M%S%z", "2024-02-29 12:30:45+00:00"),
     ],
@@ -523,6 +524,65 @@ def test_cli_existing_timezone_mismatch(cli_runner: CliRunner, tmp_path: Path, d
         assert result.exit_code != 0
         assert "incoming mapping is non-temporal" in " ".join(result.output.split())
     assert str(execute_query(db_url, "SELECT value FROM dates")[0][0]) == "2024-02-29 12:30:00"
+
+
+def _cleanup_job(tmp_path: Path, data_type: str) -> Path:
+    return write_job(
+        tmp_path,
+        {"value": "value"},
+        filename_to_column={
+            "template": "data_[key].csv",
+            "columns": {
+                "key": {
+                    "db_column": "file_key",
+                    "type": data_type,
+                    "use_to_delete_old_rows": True,
+                }
+            },
+        },
+    )
+
+
+def test_cli_cleanup_matches_legacy_raw_filename_dates(
+    cli_runner: CliRunner, tmp_path: Path, db_url: str
+) -> None:
+    """Rows written with the raw filename spelling are still cleaned up."""
+    with DatabaseConnection(db_url) as db:
+        db.backend.execute("CREATE TABLE dates (id INTEGER PRIMARY KEY, value TEXT, file_key TEXT)")
+        for row_id in (1, 2):
+            db.backend.execute(f"INSERT INTO dates VALUES ({row_id}, 'old', '20240229')")
+        db.backend.commit()
+    config = _cleanup_job(tmp_path, "date")
+    source = write_values(tmp_path / "data_20240229.csv", ["new"])
+    result = invoke_sync(cli_runner, source, config, db_url, dry=True)
+    assert result.exit_code == 0, result.output
+    assert "1 stale row(s)" in result.output
+    result = invoke_sync(cli_runner, source, config, db_url)
+    assert result.exit_code == 0, result.output
+    rows = execute_query(db_url, "SELECT id, value, file_key FROM dates ORDER BY id")
+    assert [tuple(row) for row in rows] == [(1, "new", "2024-02-29")]
+
+
+def test_cli_boolean_cleanup_key(cli_runner: CliRunner, tmp_path: Path, db_url: str) -> None:
+    config = _cleanup_job(tmp_path, "boolean")
+    source = write_values(tmp_path / "data_true.csv", ["a", "b"])
+    assert invoke_sync(cli_runner, source, config, db_url).exit_code == 0
+    write_values(source, ["a"])
+    result = invoke_sync(cli_runner, source, config, db_url)
+    assert result.exit_code == 0, result.output
+    assert [row[0] for row in execute_query(db_url, "SELECT id FROM dates")] == [1]
+
+
+def test_cli_invalid_boolean_cleanup_key_fails_before_writes(
+    cli_runner: CliRunner, tmp_path: Path, db_url: str
+) -> None:
+    config = _cleanup_job(tmp_path, "boolean")
+    source = write_values(tmp_path / "data_maybe.csv", ["a"])
+    result = invoke_sync(cli_runner, source, config, db_url)
+    assert result.exit_code != 0
+    assert "not a valid boolean" in " ".join(result.output.split())
+    with DatabaseConnection(db_url) as db:
+        assert not db.table_exists("dates")
 
 
 def test_cli_untyped_keeps_existing_integer_column(

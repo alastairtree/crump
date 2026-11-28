@@ -56,7 +56,8 @@ def validate_datetime_format(data_type: str | None, fmt: str | None) -> None:
         raise ValueError("datetime_format must be a non-empty Python strptime format string")
     if not is_temporal(data_type):
         raise ValueError("datetime_format requires a temporal type")
-    representative = datetime(2004, 2, 29, 12, 34, 56, 123456, timezone.utc)
+    # Not a leap day: yearless formats such as %d/%m default to 1900.
+    representative = datetime(2004, 3, 15, 12, 34, 56, 123456, timezone.utc)
     try:
         datetime.strptime(representative.strftime(fmt), fmt)
     except (ValueError, re.error) as exc:

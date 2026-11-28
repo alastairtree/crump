@@ -144,7 +144,7 @@ class DatabaseBackend(Protocol):
         self,
         table_name: str,
         id_columns: list[str],
-        filter_columns: dict[str, str],
+        filter_columns: dict[str, Any],
         current_ids: set[tuple],
     ) -> int:
         """Delete records from database that aren't in current CSV using compound filter key."""
@@ -154,7 +154,7 @@ class DatabaseBackend(Protocol):
         self,
         table_name: str,
         id_columns: list[str],
-        filter_columns: dict[str, str],
+        filter_columns: dict[str, Any],
         current_ids: set[tuple],
     ) -> int:
         """Count records that would be deleted using compound filter key."""
@@ -360,7 +360,7 @@ class PostgreSQLBackend:
         self,
         table_name: str,
         id_columns: list[str],
-        filter_columns: dict[str, str],
+        filter_columns: dict[str, Any],
         current_ids: set[tuple],
     ) -> int:
         """Count records that would be deleted using compound filter key.
@@ -420,7 +420,7 @@ class PostgreSQLBackend:
         self,
         table_name: str,
         id_columns: list[str],
-        filter_columns: dict[str, str],
+        filter_columns: dict[str, Any],
         current_ids: set[tuple],
     ) -> int:
         """Delete records from database that aren't in current CSV using compound filter key.
@@ -741,7 +741,7 @@ class SQLiteBackend:
         self,
         table_name: str,
         id_columns: list[str],
-        filter_columns: dict[str, str],
+        filter_columns: dict[str, Any],
         current_ids: set[tuple],
     ) -> int:
         """Delete records from database that aren't in current CSV using compound filter key.
@@ -816,7 +816,7 @@ class SQLiteBackend:
         self,
         table_name: str,
         id_columns: list[str],
-        filter_columns: dict[str, str],
+        filter_columns: dict[str, Any],
         current_ids: set[tuple],
     ) -> int:
         """Count records that would be deleted using compound filter key.
@@ -945,7 +945,7 @@ class DatabaseConnection:
         self,
         table_name: str,
         id_columns: list[str],
-        filter_columns: dict[str, str],
+        filter_columns: dict[str, Any],
         current_ids: set[tuple],
     ) -> int:
         """Delete records from database that aren't in current CSV using compound filter key."""
@@ -959,7 +959,7 @@ class DatabaseConnection:
         self,
         table_name: str,
         id_columns: list[str],
-        filter_columns: dict[str, str],
+        filter_columns: dict[str, Any],
         current_ids: set[tuple],
     ) -> int:
         """Count records that would be deleted using compound filter key."""
@@ -1971,8 +1971,9 @@ class DatabaseConnection:
 
     def _filename_delete_values(
         self, job: CrumpJob, filename_values: dict[str, str]
-    ) -> dict[str, str]:
-        values = {}
+    ) -> dict[str, Any]:
+        """Cleanup filter values, normalised exactly as the inserted values are."""
+        values: dict[str, Any] = {}
         if job.filename_to_column:
             for name, col in job.filename_to_column.columns.items():
                 if col.use_to_delete_old_rows and name in filename_values:
@@ -1983,11 +1984,51 @@ class DatabaseConnection:
                             f"Filename cleanup value for '{col.db_column}' exceeds "
                             f"varchar({varchar_limit}); refusing to sync or delete records"
                         )
+                    normalised: Any = value
                     if is_temporal(col.data_type):
                         assert col.data_type is not None
-                        value = parse_temporal(value, col.data_type, col.datetime_format)
-                    values[col.db_column] = value
+                        normalised = parse_temporal(value, col.data_type, col.datetime_format)
+                    elif self._is_boolean_type(col.data_type):
+                        normalised = self._convert_to_boolean(value)
+                        if normalised is None:
+                            raise ValueError(
+                                f"Filename cleanup value {value!r} for '{col.db_column}' is "
+                                "not a valid boolean; refusing to sync or delete records"
+                            )
+                    values[col.db_column] = normalised
         return values
+
+    def _legacy_delete_values(
+        self, job: CrumpJob, filename_values: dict[str, str], delete_values: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Cleanup filter matching rows written before filename values were normalised.
+
+        Older versions stored filename values as extracted (e.g. ``20240229``), so stale
+        rows may still hold that spelling. This is only possible where the column can
+        hold the raw text: any SQLite column, or a PostgreSQL text column.
+
+        Returns:
+            The filter with raw filename values, or None if no value differs.
+        """
+        if not job.filename_to_column or not self.table_exists(job.target_table):
+            return None
+        existing = self.get_existing_columns_with_types(job.target_table)
+        is_sqlite = not isinstance(self.backend, PostgreSQLBackend)
+        legacy = dict(delete_values)
+        changed = False
+        for name, col in job.filename_to_column.columns.items():
+            if col.db_column not in delete_values:
+                continue
+            raw = filename_values[name]
+            if raw == delete_values[col.db_column]:
+                continue
+            column_type = existing.get(col.db_column.lower())
+            if column_type is None:
+                continue
+            if is_sqlite or column_type == "text" or column_type.startswith("varchar"):
+                legacy[col.db_column] = raw
+                changed = True
+        return legacy if changed else None
 
     def _check_temporal_schema(self, table: str, definitions: dict[str, str]) -> None:
         """Do not let PostgreSQL silently discard offsets on an existing naive column."""
@@ -2082,6 +2123,9 @@ class DatabaseConnection:
         """
         job = self._resolve_filename_columns(file_path, job, filename_values)
         delete_key_values = self._filename_delete_values(job, filename_values or {})
+        legacy_delete_values = self._legacy_delete_values(
+            job, filename_values or {}, delete_key_values
+        )
         summary = DryRunSummary()
         summary.table_name = job.target_table
 
@@ -2121,11 +2165,12 @@ class DatabaseConnection:
             if delete_key_columns:
                 # Build compound key values from filename_values
                 id_columns = [id_col.db_column for id_col in job.id_mapping]
-                summary.rows_to_delete = self.count_stale_records_compound(
-                    job.target_table,
-                    id_columns,
-                    delete_key_values,
-                    synced_ids,
+                summary.rows_to_delete = sum(
+                    self.count_stale_records_compound(
+                        job.target_table, id_columns, values, synced_ids
+                    )
+                    for values in (delete_key_values, legacy_delete_values)
+                    if values
                 )
 
         return summary
@@ -2164,6 +2209,9 @@ class DatabaseConnection:
         try:
             job = self._resolve_filename_columns(file_path, job, filename_values)
             delete_key_values = self._filename_delete_values(job, filename_values or {})
+            legacy_delete_values = self._legacy_delete_values(
+                job, filename_values or {}, delete_key_values
+            )
             # Prepare sync (validates CSV and builds schema)
             csv_columns, sync_columns, columns_def = self._prepare_sync(file_path, job)
 
@@ -2185,11 +2233,12 @@ class DatabaseConnection:
                 if delete_key_columns:
                     # Build compound key values from filename_values
                     id_columns = [id_col.db_column for id_col in job.id_mapping]
-                    rows_deleted = self.delete_stale_records_compound(
-                        job.target_table,
-                        id_columns,
-                        delete_key_values,
-                        synced_ids,
+                    rows_deleted = sum(
+                        self.delete_stale_records_compound(
+                            job.target_table, id_columns, values, synced_ids
+                        )
+                        for values in (delete_key_values, legacy_delete_values)
+                        if values
                     )
 
             success = True
