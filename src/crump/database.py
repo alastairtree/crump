@@ -82,6 +82,46 @@ _POSTGRES_TEMPORAL_TYPES = frozenset(
 )
 
 
+def _filter_values(value: Any) -> list[Any]:
+    """A tuple filter value means any of its values may match."""
+    return list(value) if isinstance(value, tuple) else [value]
+
+
+def _postgres_filter(filter_columns: dict[str, Any]) -> tuple[list[sql.Composable], list[Any]]:
+    conditions: list[sql.Composable] = []
+    params: list[Any] = []
+    for col, value in filter_columns.items():
+        values = _filter_values(value)
+        conditions.append(
+            sql.SQL("{} IN ({})").format(
+                sql.Identifier(col), sql.SQL(", ").join(sql.Placeholder() * len(values))
+            )
+        )
+        params.extend(values)
+    return conditions, params
+
+
+def _sqlite_filter(filter_columns: dict[str, Any]) -> tuple[list[str], list[Any]]:
+    conditions: list[str] = []
+    params: list[Any] = []
+    for col, value in filter_columns.items():
+        values = _filter_values(value)
+        conditions.append(f'"{col}" IN ({", ".join("?" * len(values))})')
+        params.extend(values)
+    return conditions, params
+
+
+# Canonical text written for temporal values (see crump.temporal.parse_temporal).
+_CANONICAL_TEMPORAL_PATTERNS = {
+    "date": r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+    "datetime": r"^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{6})?$",
+    "timestamp": r"^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{6})?$",
+    "timestamptz": (r"^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{6})?\+00:00$"),
+    "time": r"^[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{6})?$",
+    "timetz": r"^[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{6})?[+-][0-9]{2}:[0-9]{2}$",
+}
+
+
 class DatabaseBackend(Protocol):
     """Protocol for database backend operations."""
 
@@ -378,9 +418,7 @@ class PostgreSQLBackend:
             return 0
 
         # Build WHERE clause: WHERE col1 = ? AND col2 = ? AND (id1, id2) NOT IN (...)
-        filter_conditions = [
-            sql.SQL("{} = %s").format(sql.Identifier(col)) for col in filter_columns
-        ]
+        filter_conditions, filter_params = _postgres_filter(filter_columns)
 
         if len(id_columns) == 1:
             # Single key - simpler query
@@ -393,7 +431,7 @@ class PostgreSQLBackend:
                 sql.Identifier(id_columns[0]),
                 sql.SQL(", ").join(sql.Placeholder() * len(current_ids_list)),
             )
-            params = tuple(list(filter_columns.values()) + current_ids_list)
+            params = tuple(filter_params + current_ids_list)
         else:
             # Compound key - use row value constructor
             id_cols_sql = sql.SQL("({})").format(
@@ -411,7 +449,7 @@ class PostgreSQLBackend:
             )
             # Flatten the list of tuples for params
             id_params = [val for id_tuple in current_ids for val in id_tuple]
-            params = tuple(list(filter_columns.values()) + id_params)
+            params = tuple(filter_params + id_params)
 
         count_result = self.fetchall(count_query.as_string(self.conn), params)
         return count_result[0][0] if count_result else 0
@@ -438,9 +476,7 @@ class PostgreSQLBackend:
             return 0
 
         # Build WHERE clause: WHERE col1 = ? AND col2 = ? AND (id1, id2) NOT IN (...)
-        filter_conditions = [
-            sql.SQL("{} = %s").format(sql.Identifier(col)) for col in filter_columns
-        ]
+        filter_conditions, filter_params = _postgres_filter(filter_columns)
 
         if len(id_columns) == 1:
             # Single key - simpler query
@@ -459,7 +495,7 @@ class PostgreSQLBackend:
                 sql.Identifier(id_columns[0]),
                 sql.SQL(", ").join(sql.Placeholder() * len(current_ids_list)),
             )
-            params = tuple(list(filter_columns.values()) + current_ids_list)
+            params = tuple(filter_params + current_ids_list)
         else:
             # Compound key - use row value constructor
             id_cols_sql = sql.SQL("({})").format(
@@ -483,7 +519,7 @@ class PostgreSQLBackend:
             )
             # Flatten the list of tuples for params
             id_params = [val for id_tuple in current_ids for val in id_tuple]
-            params = tuple(list(filter_columns.values()) + id_params)
+            params = tuple(filter_params + id_params)
 
         # Count first
         count_sql = count_query.as_string(self.conn)
@@ -569,6 +605,12 @@ class SQLiteBackend:
             db_path = connection_string
 
         self.conn = sqlite3.connect(db_path)
+        self.conn.create_function(
+            "REGEXP",
+            2,
+            lambda pattern, value: value is not None and re.search(pattern, str(value)) is not None,
+            deterministic=True,
+        )
         self.cursor = self.conn.cursor()
 
     def execute(self, query: str, params: tuple[Any, ...] | None = None) -> None:
@@ -759,7 +801,7 @@ class SQLiteBackend:
             return 0
 
         # Build WHERE clause: WHERE col1 = ? AND col2 = ? AND (id1, id2) NOT IN (...)
-        filter_conditions = [f'"{col}" = ?' for col in filter_columns]
+        filter_conditions, filter_params = _sqlite_filter(filter_columns)
 
         if len(id_columns) == 1:
             # Single key - simpler query
@@ -777,7 +819,7 @@ class SQLiteBackend:
                 WHERE {" AND ".join(filter_conditions)}
                 AND "{id_columns[0]}" NOT IN ({placeholders})
             """
-            params = tuple(list(filter_columns.values()) + current_ids_list)
+            params = tuple(filter_params + current_ids_list)
         else:
             # Compound key - use row value constructor
             quoted_cols = [f'"{col}"' for col in id_columns]
@@ -795,7 +837,7 @@ class SQLiteBackend:
             """
             # Flatten the list of tuples for params
             id_params = [val for id_tuple in current_ids for val in id_tuple]
-            params = tuple(list(filter_columns.values()) + id_params)
+            params = tuple(filter_params + id_params)
 
         # Count first
         logger.debug(f"SQLite count query: {count_query}")
@@ -834,7 +876,7 @@ class SQLiteBackend:
             return 0
 
         # Build WHERE clause: WHERE col1 = ? AND col2 = ? AND (id1, id2) NOT IN (...)
-        filter_conditions = [f'"{col}" = ?' for col in filter_columns]
+        filter_conditions, filter_params = _sqlite_filter(filter_columns)
 
         if len(id_columns) == 1:
             # Single key - simpler query
@@ -847,7 +889,7 @@ class SQLiteBackend:
                 WHERE {" AND ".join(filter_conditions)}
                 AND "{id_columns[0]}" NOT IN ({placeholders})
             """
-            params = tuple(list(filter_columns.values()) + current_ids_list)
+            params = tuple(filter_params + current_ids_list)
         else:
             # Compound key - use row value constructor
             quoted_cols = [f'"{col}"' for col in id_columns]
@@ -860,7 +902,7 @@ class SQLiteBackend:
             """
             # Flatten the list of tuples for params
             id_params = [val for id_tuple in current_ids for val in id_tuple]
-            params = tuple(list(filter_columns.values()) + id_params)
+            params = tuple(filter_params + id_params)
 
         count_result = self.fetchall(count_query, params)
         return count_result[0][0] if count_result else 0
@@ -1972,63 +2014,97 @@ class DatabaseConnection:
     def _filename_delete_values(
         self, job: CrumpJob, filename_values: dict[str, str]
     ) -> dict[str, Any]:
-        """Cleanup filter values, normalised exactly as the inserted values are."""
+        """Cleanup filter values, validated and normalised exactly as inserted values are.
+
+        Values are checked with the strict row validation, so a value that would be
+        truncated, nulled or rejected on insert fails before any writes instead of
+        producing a filter that can never match.
+
+        Older versions stored filename values as extracted (e.g. ``20240229``), so where
+        a column can still hold that spelling (any SQLite column, or a PostgreSQL text
+        column) the raw value is matched as well, as a ``(normalised, raw)`` tuple.
+        """
+        if not job.filename_to_column:
+            return {}
+        cleanup = {
+            name: col
+            for name, col in job.filename_to_column.columns.items()
+            if col.use_to_delete_old_rows and name in filename_values
+        }
+        if not cleanup:
+            return {}
+        strict_job = copy(job)
+        strict_job.failure_mode = FailureMode.STRICT
+        strict_job.filename_to_column = copy(job.filename_to_column)
+        strict_job.filename_to_column.columns = cleanup
+        raw = {col.db_column: filename_values[name] for name, col in cleanup.items()}
+        problems: dict[str, int] = {}
+        validated = self._validate_and_fix_row(dict(raw), [], strict_job, {}, problems)
+        if validated is None or any(validated.get(col) is None for col in raw):
+            details = ", ".join(key.removeprefix("skip:") for key in problems) or "empty value"
+            raise ValueError(
+                f"Filename cleanup values {raw} are not valid for their configured types "
+                f"({details}); refusing to sync or delete records"
+            )
+
+        existing = (
+            self.get_existing_columns_with_types(job.target_table)
+            if self.table_exists(job.target_table)
+            else {}
+        )
+        is_sqlite = not isinstance(self.backend, PostgreSQLBackend)
         values: dict[str, Any] = {}
-        if job.filename_to_column:
-            for name, col in job.filename_to_column.columns.items():
-                if col.use_to_delete_old_rows and name in filename_values:
-                    value = filename_values[name]
-                    varchar_limit = self._get_varchar_limit(col.data_type)
-                    if varchar_limit is not None and len(value) > varchar_limit:
-                        raise ValueError(
-                            f"Filename cleanup value for '{col.db_column}' exceeds "
-                            f"varchar({varchar_limit}); refusing to sync or delete records"
-                        )
-                    normalised: Any = value
-                    if is_temporal(col.data_type):
-                        assert col.data_type is not None
-                        normalised = parse_temporal(value, col.data_type, col.datetime_format)
-                    elif self._is_boolean_type(col.data_type):
-                        normalised = self._convert_to_boolean(value)
-                        if normalised is None:
-                            raise ValueError(
-                                f"Filename cleanup value {value!r} for '{col.db_column}' is "
-                                "not a valid boolean; refusing to sync or delete records"
-                            )
-                    values[col.db_column] = normalised
+        for column, raw_value in raw.items():
+            value = validated[column]
+            stored_type = existing.get(column.lower(), "").lower()
+            can_hold_raw = stored_type and (
+                is_sqlite or stored_type == "text" or stored_type.startswith("varchar")
+            )
+            if can_hold_raw and str(value) != raw_value:
+                values[column] = (value, raw_value)
+            else:
+                values[column] = value
         return values
 
-    def _legacy_delete_values(
-        self, job: CrumpJob, filename_values: dict[str, str], delete_values: dict[str, Any]
-    ) -> dict[str, Any] | None:
-        """Cleanup filter matching rows written before filename values were normalised.
+    def _check_legacy_temporal_keys(
+        self, table: str, columns: list[ColumnMapping], primary_keys: set[str]
+    ) -> None:
+        """Refuse to sync when existing text-stored temporal keys are not canonical.
 
-        Older versions stored filename values as extracted (e.g. ``20240229``), so stale
-        rows may still hold that spelling. This is only possible where the column can
-        hold the raw text: any SQLite column, or a PostgreSQL text column.
-
-        Returns:
-            The filter with raw filename values, or None if no value differs.
+        Upserts match keys by value, so rewriting ``20240229`` as ``2024-02-29`` would
+        insert duplicates instead of updating the existing rows.
         """
-        if not job.filename_to_column or not self.table_exists(job.target_table):
-            return None
-        existing = self.get_existing_columns_with_types(job.target_table)
-        is_sqlite = not isinstance(self.backend, PostgreSQLBackend)
-        legacy = dict(delete_values)
-        changed = False
-        for name, col in job.filename_to_column.columns.items():
-            if col.db_column not in delete_values:
+        if not self.table_exists(table):
+            return
+        existing = self.get_existing_columns_with_types(table)
+        backend = self.backend
+        assert backend is not None
+        for col in columns:
+            if col.db_column not in primary_keys or not is_temporal(col.data_type):
                 continue
-            raw = filename_values[name]
-            if raw == delete_values[col.db_column]:
+            assert col.data_type is not None
+            stored_type = existing.get(col.db_column.lower(), "").lower()
+            if not (stored_type == "text" or stored_type.startswith("varchar")):
                 continue
-            column_type = existing.get(col.db_column.lower())
-            if column_type is None:
-                continue
-            if is_sqlite or column_type == "text" or column_type.startswith("varchar"):
-                legacy[col.db_column] = raw
-                changed = True
-        return legacy if changed else None
+            pattern = _CANONICAL_TEMPORAL_PATTERNS[col.data_type.lower().strip()]
+            if isinstance(backend, PostgreSQLBackend):
+                query = sql.SQL(
+                    "SELECT {col} FROM {table} WHERE {col} IS NOT NULL AND {col} !~ %s LIMIT 1"
+                ).format(col=sql.Identifier(col.db_column), table=sql.Identifier(table))
+                rows = backend.fetchall(query.as_string(backend.conn), (pattern,))
+            else:
+                rows = backend.fetchall(
+                    f'SELECT "{col.db_column}" FROM "{table}" '
+                    f'WHERE "{col.db_column}" IS NOT NULL '
+                    f'AND NOT "{col.db_column}" REGEXP ? LIMIT 1',
+                    (pattern,),
+                )
+            if rows:
+                raise ValueError(
+                    f"Primary key column '{col.db_column}' in '{table}' holds {rows[0][0]!r}, "
+                    f"which is not in canonical {col.data_type} form; syncing would duplicate "
+                    "rows. Migrate the existing keys explicitly before syncing."
+                )
 
     def _check_temporal_schema(self, table: str, definitions: dict[str, str]) -> None:
         """Do not let PostgreSQL silently discard offsets on an existing naive column."""
@@ -2094,6 +2170,7 @@ class DatabaseConnection:
             if col.db_column in primary_keys:
                 col.nullable = False
         self._resolve_temporal_columns(file_path, job.target_table, sync_columns)
+        self._check_legacy_temporal_keys(job.target_table, sync_columns, primary_keys)
 
         # Build schema definitions
         columns_def = self._build_column_definitions(sync_columns, job)
@@ -2123,9 +2200,6 @@ class DatabaseConnection:
         """
         job = self._resolve_filename_columns(file_path, job, filename_values)
         delete_key_values = self._filename_delete_values(job, filename_values or {})
-        legacy_delete_values = self._legacy_delete_values(
-            job, filename_values or {}, delete_key_values
-        )
         summary = DryRunSummary()
         summary.table_name = job.target_table
 
@@ -2165,12 +2239,8 @@ class DatabaseConnection:
             if delete_key_columns:
                 # Build compound key values from filename_values
                 id_columns = [id_col.db_column for id_col in job.id_mapping]
-                summary.rows_to_delete = sum(
-                    self.count_stale_records_compound(
-                        job.target_table, id_columns, values, synced_ids
-                    )
-                    for values in (delete_key_values, legacy_delete_values)
-                    if values
+                summary.rows_to_delete = self.count_stale_records_compound(
+                    job.target_table, id_columns, delete_key_values, synced_ids
                 )
 
         return summary
@@ -2209,9 +2279,6 @@ class DatabaseConnection:
         try:
             job = self._resolve_filename_columns(file_path, job, filename_values)
             delete_key_values = self._filename_delete_values(job, filename_values or {})
-            legacy_delete_values = self._legacy_delete_values(
-                job, filename_values or {}, delete_key_values
-            )
             # Prepare sync (validates CSV and builds schema)
             csv_columns, sync_columns, columns_def = self._prepare_sync(file_path, job)
 
@@ -2233,12 +2300,8 @@ class DatabaseConnection:
                 if delete_key_columns:
                     # Build compound key values from filename_values
                     id_columns = [id_col.db_column for id_col in job.id_mapping]
-                    rows_deleted = sum(
-                        self.delete_stale_records_compound(
-                            job.target_table, id_columns, values, synced_ids
-                        )
-                        for values in (delete_key_values, legacy_delete_values)
-                        if values
+                    rows_deleted = self.delete_stale_records_compound(
+                        job.target_table, id_columns, delete_key_values, synced_ids
                     )
 
             success = True

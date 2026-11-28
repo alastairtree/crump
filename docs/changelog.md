@@ -17,6 +17,9 @@
   `datetime_format` such as `%m/%d/%Y`.
 - Crump refuses to change an existing PostgreSQL temporal column's type or timezone
   handling; migrate it explicitly.
+- Date/time primary keys are stored in one canonical form. If an existing text key
+  column (e.g. SQLite) holds another spelling such as `20240229`, sync stops before
+  writing so rows are not duplicated; migrate the keys first.
 
 ## 0.9.0
 

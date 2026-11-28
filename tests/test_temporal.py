@@ -501,7 +501,7 @@ def test_invalid_filename_cleanup_key_fails_before_writes(
     source = write_values(tmp_path / "data_abcd.csv", ["1"])
     result = invoke_sync(cli_runner, source, config, db_url)
     assert result.exit_code != 0
-    assert "exceeds varchar(3)" in " ".join(result.output.split())
+    assert "varchar_exceeded:file_date:3" in " ".join(result.output.split())
     with DatabaseConnection(db_url) as db:
         assert not db.table_exists("dates")
 
@@ -580,9 +580,74 @@ def test_cli_invalid_boolean_cleanup_key_fails_before_writes(
     source = write_values(tmp_path / "data_maybe.csv", ["a"])
     result = invoke_sync(cli_runner, source, config, db_url)
     assert result.exit_code != 0
-    assert "not a valid boolean" in " ".join(result.output.split())
+    assert "invalid_boolean:file_key" in " ".join(result.output.split())
     with DatabaseConnection(db_url) as db:
         assert not db.table_exists("dates")
+
+
+def test_cli_out_of_range_integer_cleanup_key_fails_before_writes(
+    cli_runner: CliRunner, tmp_path: Path, db_url: str
+) -> None:
+    config = _cleanup_job(tmp_path, "integer")
+    source = write_values(tmp_path / "data_2147483648.csv", ["a"])
+    result = invoke_sync(cli_runner, source, config, db_url)
+    assert result.exit_code != 0
+    assert "int_out_of_range:file_key" in " ".join(result.output.split())
+    with DatabaseConnection(db_url) as db:
+        assert not db.table_exists("dates")
+
+
+def test_cli_boolean_cleanup_key_counted_once(
+    cli_runner: CliRunner, tmp_path: Path, db_url: str
+) -> None:
+    config = _cleanup_job(tmp_path, "boolean")
+    source = write_values(tmp_path / "data_1.csv", ["a", "b"])
+    assert invoke_sync(cli_runner, source, config, db_url).exit_code == 0
+    write_values(source, ["a"])
+    preview = invoke_sync(cli_runner, source, config, db_url, dry=True)
+    assert preview.exit_code == 0, preview.output
+    assert "1 stale row(s)" in preview.output
+    assert invoke_sync(cli_runner, source, config, db_url).exit_code == 0
+    assert [row[0] for row in execute_query(db_url, "SELECT id FROM dates")] == [1]
+
+
+def _temporal_key_job(tmp_path: Path) -> Path:
+    config = tmp_path / "keys.yml"
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "jobs": {
+                    "dates": {
+                        "target_table": "dates",
+                        "id_mapping": {"day": {"db_column": "day", "type": "date"}},
+                        "columns": {"value": "value"},
+                    }
+                }
+            }
+        )
+    )
+    return config
+
+
+@pytest.mark.parametrize(("stored", "ok"), [("20240229", False), ("2024-02-29", True)])
+def test_cli_legacy_text_temporal_key(
+    cli_runner: CliRunner, tmp_path: Path, db_url: str, stored: str, ok: bool
+) -> None:
+    """Non-canonical existing keys would be duplicated by canonical upserts."""
+    with DatabaseConnection(db_url) as db:
+        db.backend.execute("CREATE TABLE dates (day TEXT PRIMARY KEY, value TEXT)")
+        db.backend.execute(f"INSERT INTO dates VALUES ('{stored}', 'old')")
+        db.backend.commit()
+    source = tmp_path / "readings.csv"
+    source.write_text("day,value\n20240229,new\n")
+    for dry in (True, False):
+        result = invoke_sync(cli_runner, source, _temporal_key_job(tmp_path), db_url, dry)
+        assert (result.exit_code == 0) is ok, result.output
+        if not ok:
+            assert "not in canonical date form" in " ".join(result.output.split())
+    expected = [("2024-02-29", "new")] if ok else [("20240229", "old")]
+    rows = execute_query(db_url, "SELECT day, value FROM dates")
+    assert [tuple(row) for row in rows] == expected
 
 
 def test_cli_untyped_keeps_existing_integer_column(
