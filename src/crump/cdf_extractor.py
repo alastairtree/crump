@@ -10,7 +10,12 @@ from typing import Any
 
 import numpy as np
 
-from crump.cdf_reader import CDFVariable, get_column_names_for_variable, read_cdf_variables
+from crump.cdf_reader import (
+    CDFVariable,
+    get_column_names_for_variable,
+    group_variables_by_record_count,
+    read_cdf_variables,
+)
 from crump.config import CrumpJob, apply_row_transformations
 from crump.file_types import ParquetCompression
 from crump.tabular_file import create_writer
@@ -49,27 +54,6 @@ def _make_unique_column_names(column_names: list[str]) -> list[str]:
             unique_names.append(f"{name}_{seen[name]}")
 
     return unique_names
-
-
-def _group_variables_by_record_count(
-    variables: list[CDFVariable],
-) -> dict[int, list[CDFVariable]]:
-    """Group variables by their record count.
-
-    Args:
-        variables: List of CDFVariable objects
-
-    Returns:
-        Dictionary mapping record count to list of variables
-    """
-    groups: dict[int, list[CDFVariable]] = {}
-
-    for var in variables:
-        if var.num_records not in groups:
-            groups[var.num_records] = []
-        groups[var.num_records].append(var)
-
-    return groups
 
 
 def _expand_variable_to_columns(
@@ -264,7 +248,7 @@ def extract_cdf_to_tabular_file(
 
     if automerge:
         # Group variables by record count and create merged CSV files
-        groups = _group_variables_by_record_count(variables)
+        groups = group_variables_by_record_count(variables)
 
         for record_count, group_vars in sorted(groups.items(), key=lambda x: -x[0]):
             # Skip variables with very few records (likely metadata)

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.0
+## 0.10.0
 
 Adds `time`, `timetz`, `timestamptz` and `datetime_format`.
 Previously untyped mappings now infer temporal values automatically; other untyped

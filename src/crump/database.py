@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import re
 import sqlite3
 from collections import defaultdict
 from collections.abc import Iterator
@@ -181,6 +182,8 @@ class PostgreSQLBackend:
 
     def __init__(self, connection_string: str) -> None:
         """Initialize PostgreSQL connection."""
+        # SQLAlchemy driver names are URL hints; crump always uses psycopg.
+        connection_string = re.sub(r"^(postgres(?:ql)?)\+[^:/]+://", r"\1://", connection_string)
         self.conn = psycopg.connect(connection_string)
 
     def execute(self, query: str, params: tuple[Any, ...] | None = None) -> None:
@@ -861,6 +864,8 @@ class DatabaseConnection:
         Args:
             connection_string: Database connection string
                 - PostgreSQL: postgresql://user:pass@host:port/db
+                  (also postgres:// and driver-qualified URLs such as postgresql+psycopg://)
+                - PostgreSQL libpq: host=localhost dbname=mydb or service=myservice
                 - SQLite: sqlite:///path/to/db.db or sqlite:///:memory:
         """
         self.connection_string = connection_string
@@ -870,7 +875,9 @@ class DatabaseConnection:
         """Enter context manager."""
         if self.connection_string.startswith("sqlite"):
             self.backend = SQLiteBackend(self.connection_string)
-        elif self.connection_string.startswith("postgres"):
+        elif self.connection_string.startswith("postgres") or re.match(
+            r"\s*\w+\s*=", self.connection_string
+        ):
             self.backend = PostgreSQLBackend(self.connection_string)
         else:
             raise ValueError(

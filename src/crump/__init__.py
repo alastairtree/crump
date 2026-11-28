@@ -30,6 +30,12 @@ except Exception:
     __version__ = "0.0.0.dev"
 
 # Export main API functions
+from crump.cdf_reader import (
+    CDFVariable,
+    group_variables_by_record_count,
+    read_cdf_global_attributes,
+    read_cdf_variables,
+)
 from crump.config import (
     ColumnMapping,
     CrumpConfig,
@@ -57,6 +63,11 @@ __all__ = [
     "FailureMode",
     "Index",
     "IndexColumn",
+    # CDF reading
+    "CDFVariable",
+    "read_cdf_variables",
+    "read_cdf_global_attributes",
+    "group_variables_by_record_count",
     # Database operations
     "sync_file_to_db",
     "sync_file_to_db_dry_run",

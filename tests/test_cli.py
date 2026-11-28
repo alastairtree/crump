@@ -1,8 +1,11 @@
 """Tests for CLI commands."""
 
 from pathlib import Path
+from unittest.mock import patch
 
+import pytest
 from click.testing import CliRunner
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from crump import __version__
 from crump.cli import main
@@ -26,6 +29,108 @@ class TestCLIBasics:
 
 class TestSyncCommand:
     """Test suite for sync command."""
+
+    @pytest.mark.parametrize(
+        ("connection_string", "expected"),
+        [
+            ("postgresql://localhost/mydb", "postgresql://localhost/mydb"),
+            ("postgresql+psycopg://localhost/mydb", "postgresql://localhost/mydb"),
+            ("postgres://localhost/mydb", "postgres://localhost/mydb"),
+            ("host=localhost dbname=mydb", "host=localhost dbname=mydb"),
+            ("service=crump", "service=crump"),
+        ],
+    )
+    @pytest.mark.parametrize("url_source", ["option", "environment"])
+    def test_sync_connection_strings_reach_driver(
+        self,
+        cli_runner: CliRunner,
+        tmp_path: Path,
+        connection_string: str,
+        expected: str,
+        url_source: str,
+    ) -> None:
+        """Exercise CLI dry-run through the real backend, mocking only the connection."""
+        from tests.test_helpers import create_config_file, create_csv_file
+
+        csv_file = create_csv_file(
+            tmp_path / "data.csv", ["id", "name"], [{"id": "1", "name": "Alice"}]
+        )
+        config_file = create_config_file(
+            tmp_path / "config.yml", "test_job", "connection_test", {"id": "id"}
+        )
+        args = ["sync", str(csv_file), "--config", str(config_file), "--dry-run"]
+        env: dict[str, str | None] = {"DATABASE_URL": None}
+        if url_source == "option":
+            args.extend(["--db-url", connection_string])
+        else:
+            env["DATABASE_URL"] = connection_string
+
+        with patch("crump.database.psycopg.connect") as connect:
+            connect.return_value.cursor.return_value.__enter__.return_value.fetchall.return_value = []
+            result = cli_runner.invoke(main, args, env=env)
+
+        assert result.exit_code == 0, result.output
+        assert "Dry-run Summary" in result.output
+        assert "would be inserted/updated" in result.output
+        connect.assert_called_once_with(expected)
+        assert conninfo_to_dict(expected)
+
+    @pytest.mark.parametrize(
+        "connection_format", ["postgresql", "postgresql+psycopg", "postgres", "conninfo", "service"]
+    )
+    @pytest.mark.parametrize("url_source", ["option", "environment"])
+    def test_sync_postgres_connection_formats(
+        self,
+        cli_runner: CliRunner,
+        tmp_path: Path,
+        postgres_db: str,
+        connection_format: str,
+        url_source: str,
+    ) -> None:
+        """Sync and dry-run accept common PostgreSQL connection formats from either source."""
+        from tests.db_test_utils import execute_query
+        from tests.test_helpers import create_config_file, create_csv_file
+
+        csv_file = create_csv_file(
+            tmp_path / "data.csv", ["id", "name"], [{"id": "1", "name": "Alice"}]
+        )
+        config_file = create_config_file(
+            tmp_path / "config.yml", "test_job", "connection_test", {"id": "id"}
+        )
+        env: dict[str, str | None] = {"DATABASE_URL": None}
+        if connection_format == "conninfo":
+            connection_string = make_conninfo(**conninfo_to_dict(postgres_db))
+        elif connection_format == "service":
+            service_file = tmp_path / "pg_service.conf"
+            service_file.write_text(
+                "[crump_test]\n"
+                + "\n".join(
+                    f"{key}={value}" for key, value in conninfo_to_dict(postgres_db).items()
+                )
+                + "\n"
+            )
+            env["PGSERVICEFILE"] = str(service_file)
+            connection_string = "service=crump_test"
+        else:
+            connection_string = f"{connection_format}://{postgres_db.split('://', 1)[1]}"
+
+        args = ["sync", str(csv_file), "--config", str(config_file)]
+        if url_source == "option":
+            args.extend(["--db-url", connection_string])
+        else:
+            env["DATABASE_URL"] = connection_string
+
+        result = cli_runner.invoke(main, [*args, "--dry-run"], env=env)
+        assert result.exit_code == 0, result.output
+        assert "Dry-run Summary" in result.output
+        assert execute_query(postgres_db, "SELECT to_regclass('connection_test')") == [(None,)]
+
+        result = cli_runner.invoke(main, args, env=env)
+        assert result.exit_code == 0, result.output
+        assert "Successfully synced" in result.output
+        assert execute_query(postgres_db, "SELECT id, name FROM connection_test") == [
+            ("1", "Alice")
+        ]
 
     def test_sync_help(self, cli_runner: CliRunner) -> None:
         """Test sync command help."""
