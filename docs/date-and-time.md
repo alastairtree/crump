@@ -1,4 +1,4 @@
-# Dates, times and nanoseconds
+# Dates and Times
 
 Crump automatically recognises common temporal formats in `prepare` and in untyped
 column mappings during `sync`. An explicit `type` always overrides inference.

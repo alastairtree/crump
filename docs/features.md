@@ -2,14 +2,9 @@
 
 Detailed documentation of all crump features.
 
-## Automatic Temporal Parsing
+## Dates and Times
 
-Common dates, times and datetimes are automatically inferred and validated, including
-named months, offsets and compact dates between 19700101 and 20991231 when the whole
-column qualifies. Numeric month-first dates require explicit YAML `datetime_format`;
-`03/04/2024` always means 3 April. Sync and dry-run report the selected formats once
-per temporal column/file. See [Dates, Times and Nanoseconds](date-and-time.md) for
-formats, explicit overrides and exact nanosecond storage on PostgreSQL and SQLite.
+Crump handles a wide variety of date and time formats and will detect most dates and times automatically. See [Dates and Times](date-and-time.md) for more details.
 
 ## Idempotent Operations
 
@@ -461,10 +456,7 @@ crump sync data.csv --config crump_config.yml --job my_job
 ## Type Detection
 
 Automatically detects column types from CSV data. Explicit types override detection.
-Temporal values use the same parser in `prepare`, `sync` and dry-run; numeric dates
-are day-first/year-first, never automatically month-first. Named-month forms such
-as `Feb 29, 2024` are supported. See [Dates, Times and Nanoseconds](date-and-time.md)
-for all supported formats and the optional Python `datetime_format` setting.
+Crump handles a wide variety of date and time formats and will detect most dates and times automatically. See [Dates and Times](date-and-time.md) for more details.
 
 ### Supported Types
 
@@ -474,11 +466,7 @@ for all supported formats and the optional Python `datetime_format` setting.
 | BIGINT | `815230591184000000`, `9223372036854775807` | Large integers exceeding INTEGER range |
 | FLOAT | `3.14`, `-0.5`, `1.23e-4` | Floating point numbers |
 | BOOLEAN | `true`, `false`, `yes`, `no`, `y`, `n`, `active`, `inactive`, `enabled`, `disabled` | Boolean values (case-insensitive) |
-| DATE | `2024-01-15`, `15/01/2024`, `20240115` | `prepare` checks the full column for compact dates; sync samples at most 1,000 rows |
-| TIME | `14:30`, `14:30:45.123456` | Time without a timezone |
-| DATETIME | `2024-01-15T14:30:45` | Naive datetime, up to microsecond precision |
-| TIMESTAMPTZ | `2024-01-15T14:30:45Z` | Datetime with an explicit offset |
-| TIMETZ | `14:30:45+02:00` | Time with an explicit offset |
+| DATE, TIME, DATETIME, TIMESTAMPTZ, TIMETZ | `2024-01-15`, `14:30`, `2024-01-15T14:30:45Z` | See [Dates and Times](date-and-time.md) |
 | TEXT | `Alice`, `alice@example.com` | Text strings |
 
 ### Nullable Detection

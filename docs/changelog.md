@@ -4,31 +4,19 @@
 
 ### Added
 
-- Automatic date/time parsing shared by `prepare`, `sync`, dry-run and configured
-  extraction. See [Date and Time](date-and-time.md).
+- Automatic date and time detection. See [Dates and Times](date-and-time.md).
 - `time`, `timetz` and `timestamptz` column types.
 - Optional `datetime_format` (Python `strptime` format) on columns, primary keys and
   filename mappings.
 
-### Changed
-
-- Previously untyped mappings now infer temporal values automatically; other untyped
-  values retain their existing TEXT storage. Compact date-like integers take precedence
-  over integer inference in `prepare`. Use explicit types for identifiers.
-- Numeric dates are now deterministic day-first/year-first, not PostgreSQL-dependent.
-  `03/04/2024` always means 3 April; numeric US month-first dates need an explicit
-  `datetime_format` such as `%m/%d/%Y`.
-- SQLite temporal strings and configured extraction outputs are normalised to ISO.
-- Offsets and sub-microsecond precision are no longer silently discarded or rounded.
-
 ### Upgrading
 
-- Untyped mappings onto existing non-temporal columns (e.g. PostgreSQL `TEXT` or `BIGINT`)
-  keep their raw values, so upgrading does not change how existing tables are filled.
-- Crump refuses incompatible naive/aware PostgreSQL temporal columns rather than
-  silently converting them. Review existing tables before changing configuration.
-- Other existing column types are not automatically migrated to temporal types; create
-  a new table or perform a deliberate migration after reviewing the data.
+- Columns without a `type` may now be detected as dates or times. Existing non-temporal
+  columns (e.g. PostgreSQL `TEXT` or `BIGINT`) are left as they are and keep raw values.
+- `03/04/2024` always means 3 April; US month-first dates need an explicit
+  `datetime_format` such as `%m/%d/%Y`.
+- Crump refuses to change an existing PostgreSQL temporal column's type or timezone
+  handling; migrate it explicitly.
 
 ## 0.9.0
 
