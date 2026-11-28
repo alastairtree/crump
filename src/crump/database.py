@@ -71,6 +71,17 @@ class DryRunSummary:
         self.rows_to_delete: int = 0
 
 
+_POSTGRES_TEMPORAL_TYPES = frozenset(
+    {
+        "date",
+        "time without time zone",
+        "time with time zone",
+        "timestamp without time zone",
+        "timestamp with time zone",
+    }
+)
+
+
 class DatabaseBackend(Protocol):
     """Protocol for database backend operations."""
 
@@ -1894,12 +1905,34 @@ class DatabaseConnection:
             else "common ISO/day-first formats (no valid values)",
         )
 
-    def _resolve_temporal_columns(self, file_path: Path, columns: list[ColumnMapping]) -> None:
+    def _existing_non_temporal_columns(self, table: str) -> set[str]:
+        """Existing columns whose stored type is known not to be temporal.
+
+        Untyped mappings onto these columns keep their raw values, so automatic
+        inference never changes how data in an existing table is stored. SQLite
+        stores temporal values as TEXT, so only its non-TEXT columns are known.
+        """
+        if not self.table_exists(table):
+            return set()
+        existing = self.get_existing_columns_with_types(table)
+        if isinstance(self.backend, PostgreSQLBackend):
+            return {
+                name
+                for name, sql_type in existing.items()
+                if sql_type not in _POSTGRES_TEMPORAL_TYPES
+            }
+        return {name for name, sql_type in existing.items() if sql_type.lower() != "text"}
+
+    def _resolve_temporal_columns(
+        self, file_path: Path, table: str, columns: list[ColumnMapping]
+    ) -> None:
+        existing_non_temporal = self._existing_non_temporal_columns(table)
         candidates = [
             col
             for col in columns
             if col.datetime_format is None
             and (col.data_type is None or is_temporal(col.data_type))
+            and not (col.data_type is None and col.db_column.lower() in existing_non_temporal)
             and not (col.function or col.expression)
         ]
         if not candidates:
@@ -1926,7 +1959,10 @@ class DatabaseConnection:
             resolved.filename_to_column.columns = {
                 name: copy(col) for name, col in job.filename_to_column.columns.items()
             }
+            existing_non_temporal = self._existing_non_temporal_columns(job.target_table)
             for name, col in resolved.filename_to_column.columns.items():
+                if col.data_type is None and col.db_column.lower() in existing_non_temporal:
+                    continue
                 if name in filename_values:
                     inference = TemporalInference()
                     inference.add(filename_values[name])
@@ -1965,13 +2001,7 @@ class DatabaseConnection:
                 "timestamp": "timestamp without time zone",
                 "time": "time without time zone",
             }.get(new_type, new_type)
-            temporal_sql_types = {
-                "date",
-                "time without time zone",
-                "time with time zone",
-                "timestamp without time zone",
-                "timestamp with time zone",
-            }
+            temporal_sql_types = _POSTGRES_TEMPORAL_TYPES
             if old_type in temporal_sql_types and new_type not in temporal_sql_types:
                 raise ValueError(
                     f"Column '{column}' in '{table}' is temporal but the incoming mapping "
@@ -2022,7 +2052,7 @@ class DatabaseConnection:
         for col in sync_columns:
             if col.db_column in primary_keys:
                 col.nullable = False
-        self._resolve_temporal_columns(file_path, sync_columns)
+        self._resolve_temporal_columns(file_path, job.target_table, sync_columns)
 
         # Build schema definitions
         columns_def = self._build_column_definitions(sync_columns, job)

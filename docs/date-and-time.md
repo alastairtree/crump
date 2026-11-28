@@ -37,6 +37,11 @@ Explicitly temporal columns instead validate each row.
 Computed (`function`/`expression`) mappings should specify their output `type`;
 Crump does not execute custom calculations during inference.
 
+Inference only chooses the type of **new** columns. If the target table already has
+the column with a non-temporal type (for example `TEXT` or `BIGINT` created by an
+earlier Crump version), an untyped mapping keeps storing raw values unchanged. SQLite
+stores temporal values as `TEXT`, so there only non-`TEXT` columns are kept as-is.
+
 ### Compact integer dates
 
 Before inferring integers, Crump checks whether **every non-empty value in the entire

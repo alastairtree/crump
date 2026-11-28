@@ -525,6 +525,42 @@ def test_cli_existing_timezone_mismatch(cli_runner: CliRunner, tmp_path: Path, d
     assert str(execute_query(db_url, "SELECT value FROM dates")[0][0]) == "2024-02-29 12:30:00"
 
 
+def test_cli_untyped_keeps_existing_integer_column(
+    cli_runner: CliRunner, tmp_path: Path, db_url: str, caplog
+) -> None:
+    """Inference must not change the type of a column that already exists."""
+    caplog.set_level(logging.INFO)
+    with DatabaseConnection(db_url) as db:
+        db.backend.execute("CREATE TABLE dates (id INTEGER PRIMARY KEY, value BIGINT)")
+        db.backend.commit()
+    source = write_values(tmp_path / "readings.csv", ["20240229", "20250102"])
+    config = write_job(tmp_path, {"value": "value"})
+    for dry in (True, False):
+        result = invoke_sync(cli_runner, source, config, db_url, dry)
+        assert result.exit_code == 0, result.output
+    assert not any("automatically parsing" in message for message in caplog.messages)
+    rows = execute_query(db_url, "SELECT value FROM dates ORDER BY id")
+    assert [row[0] for row in rows] == [20240229, 20250102]
+
+
+def test_cli_untyped_keeps_existing_text_column(
+    cli_runner: CliRunner, tmp_path: Path, db_url: str, caplog
+) -> None:
+    if db_url.startswith("sqlite"):
+        pytest.skip("SQLite stores temporal values as TEXT, so text columns are ambiguous")
+    caplog.set_level(logging.INFO)
+    with DatabaseConnection(db_url) as db:
+        db.backend.execute("CREATE TABLE dates (id INTEGER PRIMARY KEY, value TEXT)")
+        db.backend.commit()
+    source = write_values(tmp_path / "readings.csv", ["2024-02-29T12:30:00"])
+    config = write_job(tmp_path, {"value": "value"})
+    for dry in (True, False):
+        result = invoke_sync(cli_runner, source, config, db_url, dry)
+        assert result.exit_code == 0, result.output
+    assert not any("automatically parsing" in message for message in caplog.messages)
+    assert execute_query(db_url, "SELECT value FROM dates")[0][0] == "2024-02-29T12:30:00"
+
+
 @pytest.mark.parametrize("value", ["12/31/2024", "12/31/2024 2:30 PM"])
 def test_cli_never_infers_numeric_us(
     cli_runner: CliRunner, tmp_path: Path, db_url: str, value: str, caplog
