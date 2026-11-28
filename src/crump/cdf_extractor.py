@@ -657,6 +657,12 @@ def _transform_tabular_file_with_config(
         # beside the output so restoring it is an atomic same-filesystem rename.
         backup = output_path.with_name(output_path.name + ".crump-backup") if write_append else None
         if backup is not None:
+            if backup.exists():
+                # A backup left by an earlier failed restore may be the only intact original.
+                raise FileExistsError(
+                    f"Cannot append to {output_path}: recovery backup {backup} already exists "
+                    f"from an earlier failed append. Restore or remove it first."
+                )
             shutil.copy2(output_path, backup)
         try:
             with create_writer(

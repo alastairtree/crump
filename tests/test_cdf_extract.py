@@ -941,3 +941,11 @@ def test_extract_cdf_with_config_keeps_backup_when_restore_fails(
     backup = result.output_file.with_name(result.output_file.name + ".crump-backup")
     assert str(backup) in str(error.value)
     assert backup.read_bytes() == original
+
+    # A retry must not overwrite the only intact copy of the original file.
+    monkeypatch.undo()
+    with pytest.raises(FileExistsError, match="recovery backup"):
+        extract_cdf_with_config(
+            cdf_file_path=imap_cdf_file, output_dir=tmp_path, job=_vector_job("time"), append=True
+        )
+    assert backup.read_bytes() == original
